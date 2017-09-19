@@ -9,9 +9,35 @@ from python_speech_features import logfbank
 import sys
 import os
 import numpy
+import re
 
 FLAGS = None
 MODES = ['mfcc', 'fbank', 'raw']
+
+"""
+Expected data directory structure:
+    data >
+        number >
+            %format [wav, mp3] >
+                [file_name.%format]*
+            etc >
+                txt.done.data: [( file_name "phrase" )\n]*
+Creates directories:
+    data >
+        number >
+            %format >
+            etc >
+    *       %mode [mfcc, fbank, raw] >
+                [file_name.csv]*:
+                    header [some metadata]
+                    numpy array
+"""
+
+
+def parse_labels_file(file_path):
+    with open(file_path, encoding="utf8") as f:
+        content = f.readlines()
+        return [[x.split(" ")[1], re.findall('"([^"]*)"', x)] for x in content]
 
 
 def load_file(file_path, file_format,
