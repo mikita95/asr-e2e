@@ -35,9 +35,31 @@ Creates directories:
 
 
 def parse_labels_file(file_path):
+    result = {}
     with open(file_path, encoding="utf8") as f:
         content = f.readlines()
-        return [[x.split(" ")[1], re.findall('"([^"]*)"', x)] for x in content]
+        for x in content:
+            result[x.split(" ")[1]] = re.findall('"([^"]*)"', x)
+        return result
+
+
+def load_batched_data(data_path, batch_size, mode):
+    """
+    Generates batches of data
+    Returns: pair of path to feature file and label string corresponding to it
+
+    """
+    all_features = []
+    for file_dir in os.listdir(data_path):
+        file_mode_path = os.path.join(data_path, file_dir, mode)
+        file_labels_path = os.path.join(data_path, file_dir, "etc", "txt.done.data")
+        labels = parse_labels_file(file_labels_path)
+        for file_name in os.listdir(file_mode_path):
+            feature_name = os.path.splitext(file_name)[0]
+            file_feature_path = os.path.join(file_mode_path, file_name)
+            all_features.append([file_feature_path, labels[feature_name]])
+    for i in range(0, len(all_features), batch_size):
+        yield all_features[i:i + batch_size]
 
 
 def load_file(file_path, file_format,
