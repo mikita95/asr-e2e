@@ -62,6 +62,10 @@ def load_batched_data(data_path, batch_size, mode):
         yield all_features[i:i + batch_size]
 
 
+def parse_feature_file(feature_path):
+    pass
+
+
 def load_file(file_path, file_format,
               samples_per_second, channel_count,
               samples_per_second_tensor=None, feed_dict=None):
