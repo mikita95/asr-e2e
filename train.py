@@ -8,6 +8,9 @@ import os
 
 FLAGS = None
 
+# Accounting the 0th index + space + blank label = 28 characters
+num_classes = ord('я') - ord('а') + 1 + 1 + 1
+
 
 def run():
     # We want to see all the logging messages for this tutorial.
@@ -30,31 +33,36 @@ def run():
         checks = tf.add_check_numerics_ops()
         control_dependencies = [checks]
 
-    target_ixs = tf.placeholder(tf.int64)
-    target_values = tf.placeholder(tf.int32)
-    target_shape = tf.placeholder(tf.int64)
-    target = tf.SparseTensor(target_ixs, target_values, target_shape)
+    # Here we use sparse_placeholder that will generate a
+    # SparseTensor required by ctc_loss op.
+    target = tf.sparse_placeholder(tf.int32)
 
-    # TODO: dims
-    input = tf.placeholder(tf.float32, [None], name='fingerprint_input')
+    feature_number = tf.placeholder(tf.int32)  # e.g. number of cepstrals in mfcc
 
-    output = md.create_model(FLAGS.model, input, None, FLAGS.mode)
+    # [max_time_steps x batch_size x feature_number]
+    inputs = tf.placeholder(tf.float32, [None, None, feature_number], name='inputs')
+
+    # Lengths of the audio sequences in frames, array [batch_size]
     seq_lengths = tf.placeholder(tf.int32, shape=FLAGS.batch_size)
+
+    # TODO: DIM?
+    logits = md.create_model(arch_type=FLAGS.model,
+                             feature_input=inputs,
+                             settings=None,
+                             mode=FLAGS.mode)
+
+
     # Create the back propagation and training evaluation machinery in the graph.
     with tf.name_scope('ctc'):
-        ctc_mean = tf.reduce_mean(ctc.ctc_loss(target, output, seq_lengths))
+        ctc_mean = tf.reduce_mean(ctc.ctc_loss(target, logits, seq_lengths))
 
-   # tf.summary.scalar('cross_entropy', cross_entropy_mean)
     with tf.name_scope('train'), tf.control_dependencies(control_dependencies):
         learning_rate_input = tf.placeholder(tf.float32, [], name='learning_rate_input')
         train_step = tf.train.GradientDescentOptimizer(learning_rate_input).minimize(ctc_mean)
 
-    logits_max_test = tf.slice(tf.argmax(output, 2), [0, 0], [seq_lengths[0], 1])
+    decoded, log_prob = ctc.ctc_beam_search_decoder(logits, seq_lengths)
 
-    predictions = tf.to_int32(ctc.ctc_beam_search_decoder(output, seq_lengths)[0][0])
-    evaluation_step = tf.reduce_sum(
-        tf.edit_distance(predictions, target, normalize=False)) / tf.to_float(
-        tf.size(target.values))
+    evaluation_step = tf.reduce_mean(tf.edit_distance(tf.cast(decoded[0], tf.int32), target))  # label error rate
 
     global_step = tf.contrib.framework.get_or_create_global_step()
     increment_global_step = tf.assign(global_step, global_step + 1)

@@ -14,6 +14,10 @@ import re
 FLAGS = None
 MODES = ['mfcc', 'fbank', 'raw']
 
+SPACE_TOKEN = '<space>'
+SPACE_INDEX = 0
+FIRST_INDEX = ord('а') - 1  # 0 is reserved to space
+
 """
 Expected data directory structure:
     data >
@@ -34,6 +38,63 @@ Creates directories:
 """
 
 
+def convert_inputs_to_ctc_format(feature_audio, target_text):
+    # TODO: Fill docs
+    """
+    Args:
+        feature_audio:
+        target_text:
+
+    Returns:
+
+    """
+    # Transform in 3D array
+    train_inputs = numpy.asarray(feature_audio[numpy.newaxis, :])
+    train_inputs = (train_inputs - numpy.mean(train_inputs)) / numpy.std(train_inputs)
+    train_seq_len = [train_inputs.shape[1]]
+
+    # Get only the words between [а-я] and replace period for none
+    original = ' '.join(target_text.strip().lower().split(' ')).replace('.', '').replace('?', '').replace(',', ''). \
+        replace("'", '').replace('!', '').replace('-', '')
+
+    targets = original.replace(' ', '  ')
+    targets = targets.split(' ')
+
+    # Adding blank label
+    targets = numpy.hstack([SPACE_TOKEN if x == '' else list(x) for x in targets])
+
+    # Transform char into index
+    targets = numpy.asarray([SPACE_INDEX if x == SPACE_TOKEN else ord(x) - FIRST_INDEX
+                             for x in targets])
+
+    # Creating sparse representation to feed the placeholder
+    train_targets = sparse_tuple_from([targets])
+
+    return train_inputs, train_targets, train_seq_len, original
+
+
+def sparse_tuple_from(sequences, dtype=numpy.int32):
+    """Create a sparse representation of x.
+    Args:
+        sequences: a list of lists of type dtype where each element is a sequence
+        dtype: type
+    Returns:
+        A tuple with (indices, values, shape)
+    """
+    indices = []
+    values = []
+
+    for n, seq in enumerate(sequences):
+        indices.extend(zip([n] * len(seq), range(len(seq))))
+        values.extend(seq)
+
+    indices = numpy.asarray(indices, dtype=numpy.int64)
+    values = numpy.asarray(values, dtype=dtype)
+    shape = numpy.asarray([len(sequences), numpy.asarray(indices).max(0)[1] + 1], dtype=numpy.int64)
+
+    return indices, values, shape
+
+
 def parse_labels_file(file_path):
     result = {}
     with open(file_path, encoding="utf8") as f:
@@ -43,7 +104,7 @@ def parse_labels_file(file_path):
         return result
 
 
-def load_batched_data(data_path, batch_size, mode):
+def load_batched_data(data_path, batch_size, mode, randomize=False):
     """
     Generates batches of data
     Returns: pair of path to feature file and label string corresponding to it
@@ -58,12 +119,20 @@ def load_batched_data(data_path, batch_size, mode):
             feature_name = os.path.splitext(file_name)[0]
             file_feature_path = os.path.join(file_mode_path, file_name)
             all_features.append([file_feature_path, labels[feature_name]])
+
     for i in range(0, len(all_features), batch_size):
         yield all_features[i:i + batch_size]
 
 
-def parse_feature_file(feature_path):
-    pass
+def parse_feature_file(feature_file_path):
+    """
+    Parse file with feature data
+    Args:
+        feature_file_path: path to the file
+    Returns: numpy array
+        mfcc mode: output is [numcep x seq_length] array
+    """
+    return numpy.loadtxt(fname=feature_file_path, delimiter=",")
 
 
 def load_file(file_path, file_format,

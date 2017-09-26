@@ -5,12 +5,12 @@ from functools import wraps
 import numpy as np
 import tensorflow as tf
 
-ALPHA_SIZE = 33
 
 # TODO: refactoring
 
 
 def describe(func):
+    # TODO: Need? Docs
     """
 
     Args:
@@ -30,75 +30,6 @@ def describe(func):
         return result
 
     return wrapper
-
-
-def get_attrs(object, name):
-    """
-
-    Args:
-        object:
-        name:
-
-    Returns:
-
-    """
-    assert type(name) == list, 'name must be a list'
-    value = []
-    for n in name:
-        value.append(getattr(object, n, 'None'))
-    return value
-
-
-def set_attrs(object, attrsName, attrsValue):
-    """
-
-    Args:
-        object:
-        attrsName:
-        attrsValue:
-
-    Returns:
-
-    """
-    assert type(attrsName) == list, 'attrsName must be a list'
-    assert type(attrsValue) == list, 'attrsValue must be a list'
-    for name, value in zip(attrsName, attrsValue):
-        object.__dict__[name] = value
-
-
-def output_to_sequence(lmt):
-    """
-
-    Args:
-        lmt:
-
-    Returns:
-
-    """
-    sequences = []
-    start = 0
-    sequences.append([])
-    for i in range(len(lmt[0])):
-        if lmt[0][i][0] == start:
-            sequences[start].append(lmt[1][i])
-        else:
-            start = start + 1
-            sequences.append([])
-
-    # here, we only print the first sequence of batch
-    indexes = sequences[0]  # here, we only print the first sequence of batch
-    seq = []
-    for ind in indexes:
-        if ind == 0:
-            seq.append(' ')
-        elif ind == ALPHA_SIZE + 1:
-            seq.append("'")
-        elif ind == ALPHA_SIZE + 2:
-            pass
-        else:
-            seq.append(chr(ind + 96))
-        seq = ''.join(seq)
-        return seq
 
 
 @describe
@@ -134,111 +65,61 @@ def count_params(model, mode='trainable'):
     return num
 
 
-def list_to_sparse_tensor(target_list, mode):
+def pad_sequences(sequences, maxlen=None, dtype=np.float32,
+                  padding='post', truncating='post', value=0.):
+    """Pads each sequence to the same length: the length of the longest
+    sequence.
+        If maxlen is provided, any sequence longer than maxlen is truncated to
+        maxlen. Truncation happens off either the beginning or the end
+        (default) of the sequence. Supports post-padding (default) and
+        pre-padding.
+        Args:
+            sequences: list of lists where each element is a sequence
+            maxlen: int, maximum length
+            dtype: type to cast the resulting sequence.
+            padding: 'pre' or 'post', pad either before or after each sequence.
+            truncating: 'pre' or 'post', remove values from sequences larger
+            than maxlen either in the beginning or in the end of the sequence
+            value: float, value to pad the sequences to the desired value.
+        Returns
+            x: numpy array with dimensions (number_of_sequences, maxlen)
+            lengths: numpy array with the original sequence lengths
     """
+    lengths = np.asarray([len(s) for s in sequences], dtype=np.int64)
 
-    Args:
-        target_list:
-        mode:
+    nb_samples = len(sequences)
+    if maxlen is None:
+        maxlen = np.max(lengths)
 
-    Returns:
+    # take the sample shape from the first non empty sequence
+    # checking for consistency in the main loop below.
+    sample_shape = tuple()
+    for s in sequences:
+        if len(s) > 0:
+            sample_shape = np.asarray(s).shape[1:]
+            break
 
-    """
-    indices = []
-    values = []
-    assert mode == 'train' or mode == 'test', 'mode must be train or test'
+    x = (np.ones((nb_samples, maxlen) + sample_shape) * value).astype(dtype)
+    for idx, s in enumerate(sequences):
+        if len(s) == 0:
+            continue  # empty list was found
+        if truncating == 'pre':
+            trunc = s[-maxlen:]
+        elif truncating == 'post':
+            trunc = s[:maxlen]
+        else:
+            raise ValueError('Truncating type "%s" not understood' % truncating)
 
-    for tI, target in enumerate(target_list):
-        for seqI, val in enumerate(target):
-            indices.append([tI, seqI])
-            values.append(val)
-    shape = [len(target_list), np.asarray(indices).max(axis=0)[1] + 1]
-    return np.array(indices), np.array(values), np.array(shape)
+        # check `trunc` has expected shape
+        trunc = np.asarray(trunc, dtype=dtype)
+        if trunc.shape[1:] != sample_shape:
+            raise ValueError('Shape of sample %s of sequence at position %s is different from expected shape %s' %
+                             (trunc.shape[1:], idx, sample_shape))
 
-
-def get_edit_distance(hyp_arr, truth_arr, normalize, mode):
-    """
-
-    Args:
-        hyp_arr:
-        truth_arr:
-        normalize:
-        mode:
-
-    Returns: Edit distance between sequences
-
-    """
-    graph = tf.Graph()
-    with graph.as_default():
-        truth = tf.sparse_placeholder(tf.int32)
-        hyp = tf.sparse_placeholder(tf.int32)
-        edit_dist = tf.reduce_sum(tf.edit_distance(hyp, truth, normalize=normalize))
-
-    with tf.Session(graph=graph) as session:
-        truth_test = list_to_sparse_tensor(truth_arr, mode)
-        hyp_test = list_to_sparse_tensor(hyp_arr, mode)
-        feed_dict = {truth: truth_test, hyp: hyp_test}
-        dist = session.run(edit_dist, feed_dict=feed_dict)
-    return dist
-
-
-# TODO: needs refactoring
-def data_lists_to_batches(inputList, targetList, batchSize, mode):
-    ''' padding the input list to a same dimension, integrate all data into batchInputs
-    '''
-    assert len(inputList) == len(targetList)
-    # dimensions of inputList:batch*39*time_length
-    nFeatures = inputList[0].shape[0]
-    maxLength = 0
-    for inp in inputList:
-        # find the max time_length
-        maxLength = max(maxLength, inp.shape[1])
-    # randIxs is the shuffled index from range(0,len(inputList))
-    randIxs = np.random.permutation(len(inputList))
-    start, end = (0, batchSize)
-    dataBatches = []
-
-    while end <= len(inputList):
-        # batchSeqLengths store the time-length of each sample in a mini-batch
-        batchSeqLengths = np.zeros(batchSize)
-        # randIxs is the shuffled index of input list
-        for batchI, origI in enumerate(randIxs[start:end]):
-            batchSeqLengths[batchI] = inputList[origI].shape[-1]
-
-        batchInputs = np.zeros((maxLength, batchSize, nFeatures))
-        batchTargetList = []
-        for batchI, origI in enumerate(randIxs[start:end]):
-            # padSecs is the length of padding
-            padSecs = maxLength - inputList[origI].shape[1]
-            # numpy.pad pad the inputList[origI] with zeos at the tail
-            batchInputs[:, batchI, :] = np.pad(inputList[origI].T, ((0, padSecs), (0, 0)), 'constant',
-                                               constant_values=0)
-            # target label
-            batchTargetList.append(targetList[origI])
-        dataBatches.append((batchInputs, list_to_sparse_tensor(batchTargetList, mode), batchSeqLengths))
-        start += batchSize
-        end += batchSize
-    return (dataBatches, maxLength)
-
-
-def load_batched_data(mfccPath, labelPath, batchSize, mode):
-    '''returns 3-element tuple: batched data (list), maxTimeLength (int), and
-       total number of samples (int)'''
-    return data_lists_to_batches([np.load(os.path.join(mfccPath, fn)) for fn in os.listdir(mfccPath)],
-                                 [np.load(os.path.join(labelPath, fn)) for fn in os.listdir(labelPath)],
-                                 batchSize, mode) + \
-           (len(os.listdir(mfccPath)),)
-
-
-def _get_dims(shape):
-    ''' get shape for initialization
-    '''
-    fan_in = shape[0] if len(shape) == 2 else np.prod(shape[:-1])
-    fan_out = shape[1] if len(shape) == 2 else shape[-1]
-    return fan_in, fan_out
-
-
-def dropout(x, keep_prob, is_training):
-    """ Apply dropout to a tensor
-    """
-    return tf.contrib.layers.dropout(x, keep_prob=keep_prob, is_training=is_training)
+        if padding == 'post':
+            x[idx, :len(trunc)] = trunc
+        elif padding == 'pre':
+            x[idx, -len(trunc):] = trunc
+        else:
+            raise ValueError('Padding type "%s" not understood' % padding)
+    return x, lengths

@@ -17,13 +17,13 @@ def build_resnet(inpt, maxTimeSteps, depth, width, num_class):
 class ResNet(Model):
 
     @describe
-    def build_graph(self, args, maxTimeSteps):
+    def build_graph(self):
         self.graph = tf.Graph()
         with self.graph.as_default():
             self.inputX = tf.placeholder(tf.float32,
-                                         shape=(maxTimeSteps, args.batch_size, args.num_feature))  # [maxL,32,39]
+                                         shape=(self.maxTimeSteps, args.batch_size, args.num_feature))  # [maxL,32,39]
             inputXrs = tf.reshape(self.inputX, [-1, args.num_feature])
-            self.inputList = tf.split(inputXrs, maxTimeSteps, 0)  # convert inputXrs from [32*maxL,39] to [32,maxL,39]
+            self.inputList = tf.split(inputXrs, self.maxTimeSteps, 0)  # convert inputXrs from [32*maxL,39] to [32,maxL,39]
 
             self.targetIxs = tf.placeholder(tf.int64)
             self.targetVals = tf.placeholder(tf.int32)
