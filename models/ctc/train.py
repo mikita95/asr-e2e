@@ -55,7 +55,6 @@ def run():
                              num_classes=num_classes,
                              mode=FLAGS.mode)
 
-
     # Create the back propagation and training evaluation machinery in the graph.
     with tf.name_scope('ctc'):
         cost = tf.reduce_mean(ctc.ctc_loss(targets, logits, seq_lengths))
@@ -92,14 +91,11 @@ def run():
     tf.logging.info('Training from step: %d ', start_step)
 
     # Save graph.pbtxt.
-    tf.train.write_graph(session.graph_def, FLAGS.train_dir,
-                         FLAGS.model_architecture + '.pbtxt')
-
+    tf.train.write_graph(session.graph_def, FLAGS.train_dir, FLAGS.model_architecture + '.pbtxt')
 
     # Training loop.
     training_steps_max = np.sum(training_steps_list)
     for training_step in xrange(start_step, training_steps_max + 1):
-        train_cost = train_ler = 0
         # Figure out what the current learning rate is.
         training_steps_sum = 0
         for i in range(len(training_steps_list)):
@@ -145,8 +141,7 @@ def run():
             validation_writer.add_summary(validation_summary, training_step)
             total_accuracy += val_ler
 
-        tf.logging.info('Step %d: Validation LER = %.1f%%' %
-                       (training_step, total_accuracy * 100))
+        tf.logging.info('Step %d: Validation LER = %.1f%%' % (training_step, total_accuracy * 100))
 
         # Save the model checkpoint periodically.
         if training_step % FLAGS.save_step_interval == 0 or training_step == training_steps_max:

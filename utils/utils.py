@@ -1,25 +1,16 @@
-import os
 import time
 from functools import wraps
-
 import numpy as np
-import tensorflow as tf
-
-
-# TODO: refactoring
 
 
 def describe(func):
-    # TODO: Need? Docs
     """
-
+    Wrapper for any function to log theirs estimating time
     Args:
-        func:
+        func: Some function
 
-    Returns:
-
+    Returns: The result value of the function
     """
-
     @wraps(func)
     def wrapper(*args, **kwargs):
         print(func.__name__ + '...')
@@ -30,27 +21,6 @@ def describe(func):
         return result
 
     return wrapper
-
-
-@describe
-def logging(model, logfile, errorRate, epoch=0, delta_time=0, mode='train'):
-    if mode != 'train' and mode != 'test' and mode != 'config':
-        raise TypeError('mode should be train or test or config.')
-    logfile = logfile
-    if mode == 'config':
-        with open(logfile, "a") as myfile:
-            myfile.write(str(model.config) + '\n')
-    elif mode == 'train':
-        with open(logfile, "a") as myfile:
-            myfile.write(str(time.strftime('%X %x %Z')) + '\n')
-            myfile.write("Epoch:" + str(epoch + 1) + ' ' + "train error rate:" + str(errorRate) + '\n')
-            myfile.write("Epoch:" + str(epoch + 1) + ' ' + "train time:" + str(delta_time) + ' s\n')
-    elif mode == 'test':
-        logfile = logfile + '_TEST'
-        with open(logfile, "a") as myfile:
-            myfile.write(str(model.config) + '\n')
-            myfile.write(str(time.strftime('%X %x %Z')) + '\n')
-            myfile.write("test error rate:" + str(errorRate) + '\n')
 
 
 @describe
@@ -66,7 +36,8 @@ def count_params(model, mode='trainable'):
 
 
 def sparse_tuple_from(sequences, dtype=np.int32):
-    """Create a sparse representation of x.
+    """
+    Create a sparse representation of x.
     Args:
         sequences: a list of lists of type dtype where each element is a sequence
         dtype: type

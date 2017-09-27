@@ -10,6 +10,7 @@ FIRST_INDEX = ord('а') - 1  # 0 is reserved to space
 
 def convert_input_to_ctc_format(feature_vector, target_text):
     """
+    Converts one data example into ctc format
     Args:
         feature_vector: numpy array of dims [num_cep x seq_length]
         target_text: text of the corresponding label
@@ -41,15 +42,23 @@ def convert_input_to_ctc_format(feature_vector, target_text):
     return feature_tensor, target, seq_length, original
 
 
-def union_feature_tensors(feature_tensors):
-    return np.concatenate(tuple(feature_tensors), axis=0)
-
-
 def convert_inputs_to_ctc_format(batch):
+    """
+
+    Args:
+        batch: a list of pairs <[seq_length x num_cep] array, target_text>, where seq_length is the same for each pair
+
+    Returns: feature_tensors, sparse_targets, seq_lengths, originals
+             where feature_tensors is a tensor [batch_size x max_seq_length x num_cep]
+             sparse_targets is a concatenated sparse tensor of targets
+             seq_lengths is a list of seq_lengths
+             originals is a list of lists containing original words
+
+    """
     feature_tensors = []
+    targets = []
     seq_lengths = []
     originals = []
-    targets = []
 
     for i in range(0, len(batch)):
         feature_tensor, target, seq_length, original = \
@@ -60,13 +69,26 @@ def convert_inputs_to_ctc_format(batch):
         originals.append(original)
         targets.append(target)
 
-    feature_tensors = union_feature_tensors(feature_tensors)  # tensor [batch_size x max_seq_length x num_cep]
+    feature_tensors = np.concatenate(tuple(feature_tensors), axis=0)  # tensor [batch_size x max_seq_length x num_cep]
     # Creating sparse representation to feed the placeholder, tuple of (indices, values, shape)
     sparse_targets = ut.sparse_tuple_from(targets)
     return feature_tensors, sparse_targets, seq_lengths, originals
 
 
 def handle_feature_vectors_batch(feature_vectors_batch):
+    """
+
+    Args:
+        feature_vectors_batch: a list of pairs <[seq_length x num_cep] array, target_text>
+
+    Returns: feature_tensors, sparse_targets, seq_lengths, originals
+             where feature_tensors is a tensor [batch_size x max_seq_length x num_cep]
+             sparse_targets is a concatenated sparse tensor of targets
+             seq_lengths is a list of seq_lengths
+             originals is a list of lists containing original words
+
+    """
+    # Make all feature vectors' dims equal
     padded_batch = dp.pad_feature_vectors(feature_vectors_batch)  # list of [[max(seq_length) x num_cep] arrays, text]
 
     return convert_inputs_to_ctc_format(padded_batch)
