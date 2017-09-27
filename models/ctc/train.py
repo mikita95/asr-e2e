@@ -1,6 +1,7 @@
 # coding=utf-8
 import argparse
 import utils.data_processor as dp
+import models.ctc.ctc_utils as cu
 import tensorflow as tf
 import numpy as np
 from tensorflow.python.ops import ctc_ops as ctc
@@ -40,7 +41,7 @@ def run():
 
     feature_number = tf.placeholder(tf.int32, name='feature_number')  # e.g. number of cepstrals in mfcc
 
-    # [max_time_steps x batch_size x feature_number]
+    # [batch_size x max_time x num_classes]
     inputs = tf.placeholder(tf.float32, [None, None, feature_number], name='inputs')
 
     # Lengths of the audio sequences in frames, array [batch_size]
@@ -49,7 +50,9 @@ def run():
     # TODO: DIM?
     logits = md.create_model(arch_type=FLAGS.model,
                              feature_input=inputs,
+                             seq_lengths=seq_lengths,
                              settings=None,
+                             num_classes=num_classes,
                              mode=FLAGS.mode)
 
 
@@ -83,8 +86,7 @@ def run():
     start_step = 1
 
     if FLAGS.start_checkpoint:
-        # TODO
-      #  nn.load_variables_from_checkpoint(session, FLAGS.start_checkpoint)
+        md.load_variables_from_checkpoint(session, FLAGS.start_checkpoint)
         start_step = global_step.eval(session=session)
 
     tf.logging.info('Training from step: %d ', start_step)
@@ -110,9 +112,9 @@ def run():
         train_data = dp.load_batched_data(FLAGS.data_path, FLAGS.batch_size, FLAGS.mode)
         batch_number = 0
         for batch in train_data:
-            train_inputs, train_targets, train_seq_len, original = dp.handle_batch(batch)
+            train_inputs, train_targets, train_seq_len, originals = cu.handle_batch(batch)
 
-            feed = {feature_number: train_inputs[0].shape[0],
+            feed = {feature_number: train_inputs.shape[2],
                     inputs: train_inputs,
                     targets: train_targets,
                     learning_rate_input: learning_rate_value,
@@ -130,9 +132,9 @@ def run():
         val_data = dp.load_batched_data(FLAGS.val_path, FLAGS.batch_size, FLAGS.mode)
         total_accuracy = 0
         for batch in val_data:
-            val_inputs, val_targets, val_seq_len, original = dp.handle_batch(batch)
+            val_inputs, val_targets, val_seq_len, originals = cu.handle_batch(batch)
 
-            feed = {feature_number: val_inputs[0].shape[0],
+            feed = {feature_number: val_inputs.shape[2],
                     inputs: val_inputs,
                     targets: val_targets,
                     seq_lengths: val_seq_len}

@@ -11,6 +11,7 @@ import sys
 import os
 import numpy
 import re
+from random import shuffle
 
 FLAGS = None
 MODES = ['mfcc', 'fbank', 'raw']
@@ -29,7 +30,7 @@ Creates directories:
         number >
             %format >
             etc >
-    *       %mode [mfcc, fbank, raw] >
+    +       %mode [mfcc, fbank, raw] >
                 [file_name.csv]*:
                     header [some metadata]
                     numpy array
@@ -37,60 +38,92 @@ Creates directories:
 
 
 def parse_labels_file(file_path):
+    """
+    Parses file with target labels. Expected the following file format: [( [label_name] "[target_text]" )\n]*
+    Args:
+        file_path: path to the labels file
+
+    Returns: dictionary where key is the name of the label and the value is the target text
+
+    """
     result = {}
     with open(file_path, encoding="utf8") as f:
         content = f.readlines()
         for x in content:
-            result[x.split(" ")[1]] = re.findall('"([^"]*)"', x)
+            result[x.split(" ")[1]] = re.findall('"([^"]*)"', x)[0]
         return result
 
 
-def load_batched_data(data_path, batch_size, mode, randomize=False):
+def load_batched_data(data_path, batch_size, mode='mfcc', randomize=False):
     """
-    Generates batches of data
-    Returns: pair of path to feature file and label string corresponding to it
-
-    """
-    all_features = []
-    for file_dir in os.listdir(data_path):
-        file_mode_path = os.path.join(data_path, file_dir, mode)
-        file_labels_path = os.path.join(data_path, file_dir, "etc", "txt.done.data")
-        labels = parse_labels_file(file_labels_path)
-        for file_name in os.listdir(file_mode_path):
-            feature_name = os.path.splitext(file_name)[0]
-            file_feature_path = os.path.join(file_mode_path, file_name)
-            all_features.append([file_feature_path, labels[feature_name]])
-
-    for i in range(0, len(all_features), batch_size):
-        yield all_features[i:i + batch_size]
-
-
-def parse_feature_file(feature_file_path):
-    """
-    Parse file with feature data
+    Generator for batches of data examples
     Args:
-        feature_file_path: path to the file
-    Returns: numpy array
-        mfcc mode: output is [numcep x seq_length] array
+        data_path: path to the root of the data
+        batch_size: size of the desired batches
+        mode: format of the feature vectors, look MODE list
+        randomize: is need to be shuffled
+
+    Returns: iterator to the batches,
+            where one batch is a list of pairs <path_to_feature_file, target_text> of batch_size size
+            the last batch can be non-full
+
     """
-    return numpy.loadtxt(fname=feature_file_path, delimiter=",")
+    all_examples = []
+    for examples_subset_dir_name in os.listdir(data_path):  # data/001
+        mode_dir_path = os.path.join(data_path, examples_subset_dir_name, mode)  # data/001/mfcc
+
+        labels_file_path = os.path.join(data_path, examples_subset_dir_name, "etc", "txt.done.data")  # data/001/etc/txt.done.data
+        labels = parse_labels_file(labels_file_path)
+
+        for example_file_name in os.listdir(mode_dir_path):  # essv_001.csv
+            example_name = os.path.splitext(example_file_name)[0]  # essv_001
+            example_file_path = os.path.join(mode_dir_path, example_file_name)  # data/001/mfcc/essv_001.csv
+
+            all_examples.append([example_file_path, labels[example_name]])
+
+    if randomize:
+        shuffle(all_examples)
+
+    for i in range(0, len(all_examples), batch_size):
+        yield all_examples[i:i + batch_size]
 
 
-def pad_features(features):
-    # feature: list of pairs of arrays [numcep x seq_length] and text -> list of pairs [numcep x max(seq_length)] and text
-    lengths = numpy.asarray([f[0].shape[1] for f in features], dtype=numpy.int64)
+def parse_example_file(example_file_path):
+    """
+    Parses file with feature data
+    Args:
+        example_file_path: path to the file
+    Returns: numpy array
+        E.g: in mfcc mode output is [seq_length x numcep] array
+    """
+    return numpy.loadtxt(fname=example_file_path, delimiter=",")
+
+
+def pad_feature_vectors(examples):
+    """
+    Adds padding to the sequences, makes the lengths of them equal
+    Args:
+        examples: list E of pairs of <feature_vector, target_text>
+                  where feature_vector is [seq_length x num_cep] in E
+
+    Returns: list of pairs of <padded_feature_vector, target_text>
+             where padded_feature_vector is [max(seq_length) x num_cep]
+
+    """
+    lengths = numpy.asarray([f[0].shape[0] for f in examples], dtype=numpy.int64)
     max_len = numpy.max(lengths)
+
     result = []
-    for f in features:
-        padded_f = numpy.zeros(shape=[f[0].shape[0], max_len])
-        padded_f[:f[0].shape[0], :f[0].shape[1]] = f[0]
-        result.append([padded_f, f[1]])
+    for e in examples:
+        padded_feature_vector = numpy.zeros(shape=[max_len, e[0].shape[1]])
+        padded_feature_vector[:e[0].shape[0], :e[0].shape[1]] = e[0]
+        result.append([padded_feature_vector, e[1]])
     return result
 
 
-def load_file(file_path, file_format,
-              samples_per_second, channel_count,
-              samples_per_second_tensor=None, feed_dict=None):
+def load_audio_file(file_path, file_format,
+                    samples_per_second, channel_count,
+                    samples_per_second_tensor=None, feed_dict=None):
     """
     Loads an audio file and decodes it.
     Args:
@@ -131,7 +164,7 @@ def load_file(file_path, file_format,
 
 def get_feature(file_path, feature_settings, file_format='wav',
                 samples_per_second=16000, channel_count=1, mode='mfcc'):
-    audio = load_file(file_path, file_format, samples_per_second, channel_count)
+    audio = load_audio_file(file_path, file_format, samples_per_second, channel_count)
     if mode == 'mfcc':
         return mfcc(signal=audio,
                     samplerate=samples_per_second,

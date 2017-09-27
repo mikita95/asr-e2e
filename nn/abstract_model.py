@@ -3,11 +3,12 @@ from utils.utils import describe
 
 
 class Model(ABC):
-    def __init__(self, args, max_time_steps, num_classes):
-        self.args = args
-        self.maxTimeSteps = max_time_steps
+    def __init__(self, feature_input, seq_lengths, mode, num_classes, settings=None):
+        self.input = feature_input
+        self.seq_lengths = seq_lengths
+        self.mode = mode,
         self.num_classes = num_classes
-        self.build_graph()
+        self.settings = settings
 
     @describe
     @abstractmethod
