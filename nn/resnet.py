@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-from models.abstract_model import Model
+from nn.abstract_model import Model
 from utils.utils import describe
 from tensorflow.python.ops import ctc_ops as ctc
 

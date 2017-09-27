@@ -4,7 +4,7 @@ import utils.data_processor as dp
 import tensorflow as tf
 import numpy as np
 from tensorflow.python.ops import ctc_ops as ctc
-import models.models as md
+import nn.models as md
 import os
 
 FLAGS = None
@@ -84,7 +84,7 @@ def run():
 
     if FLAGS.start_checkpoint:
         # TODO
-      #  models.load_variables_from_checkpoint(session, FLAGS.start_checkpoint)
+      #  nn.load_variables_from_checkpoint(session, FLAGS.start_checkpoint)
         start_step = global_step.eval(session=session)
 
     tf.logging.info('Training from step: %d ', start_step)
@@ -154,7 +154,7 @@ def run():
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(prog='trainer', description='Script to train and test models')
+    parser = argparse.ArgumentParser(prog='trainer', description='Script to train and test nn')
 
     parser.add_argument('--mode',
                         type=str,
