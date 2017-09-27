@@ -1,3 +1,4 @@
+# coding=utf-8
 import argparse
 
 import tensorflow as tf
@@ -38,7 +39,11 @@ Creates directories:
 """
 
 
-def convert_inputs_to_ctc_format(feature_audio, target_text):
+def convert_inputs_to_ctc_format(features):
+    pass
+
+
+def convert_input_to_ctc_format(feature_audio, target_text):
     # TODO: Fill docs
     """
     Args:
@@ -124,6 +129,13 @@ def load_batched_data(data_path, batch_size, mode, randomize=False):
         yield all_features[i:i + batch_size]
 
 
+def handle_batch(batch):
+    feature_batch = map(lambda x: [parse_feature_file(batch[0])], batch)
+    feature_batch = pad_features(feature_batch)
+
+    return convert_inputs_to_ctc_format(feature_batch)
+
+
 def parse_feature_file(feature_file_path):
     """
     Parse file with feature data
@@ -133,6 +145,18 @@ def parse_feature_file(feature_file_path):
         mfcc mode: output is [numcep x seq_length] array
     """
     return numpy.loadtxt(fname=feature_file_path, delimiter=",")
+
+
+def pad_features(features):
+    # feature: list of pairs of arrays [numcep x seq_length] and text -> list of pairs [numcep x max(seq_length)] and text
+    lengths = numpy.asarray([f[0].shape[1] for f in features], dtype=numpy.int64)
+    max_len = numpy.max(lengths)
+    result = []
+    for f in features:
+        padded_f = numpy.zeros(shape=[f[0].shape[0], max_len])
+        padded_f[:f[0].shape[0], :f[0].shape[1]] = f[0]
+        result.append([padded_f, f[1]])
+    return result
 
 
 def load_file(file_path, file_format,

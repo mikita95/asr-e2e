@@ -1,3 +1,4 @@
+# coding=utf-8
 import argparse
 import utils.data_processor as dp
 import tensorflow as tf
@@ -17,7 +18,7 @@ def run():
     tf.logging.set_verbosity(tf.logging.INFO)
 
     # Start a new TensorFlow session.
-    sess = tf.InteractiveSession()
+    session = tf.InteractiveSession()
 
     training_steps_list = list(map(int, FLAGS.how_many_training_steps.split(',')))
     learning_rates_list = list(map(float, FLAGS.learning_rate.split(',')))
@@ -35,15 +36,15 @@ def run():
 
     # Here we use sparse_placeholder that will generate a
     # SparseTensor required by ctc_loss op.
-    target = tf.sparse_placeholder(tf.int32)
+    targets = tf.sparse_placeholder(tf.int32, name='targets')
 
-    feature_number = tf.placeholder(tf.int32)  # e.g. number of cepstrals in mfcc
+    feature_number = tf.placeholder(tf.int32, name='feature_number')  # e.g. number of cepstrals in mfcc
 
     # [max_time_steps x batch_size x feature_number]
     inputs = tf.placeholder(tf.float32, [None, None, feature_number], name='inputs')
 
     # Lengths of the audio sequences in frames, array [batch_size]
-    seq_lengths = tf.placeholder(tf.int32, shape=FLAGS.batch_size)
+    seq_lengths = tf.placeholder(tf.int32, shape=FLAGS.batch_size, name='seq_lengths')
 
     # TODO: DIM?
     logits = md.create_model(arch_type=FLAGS.model,
@@ -54,32 +55,49 @@ def run():
 
     # Create the back propagation and training evaluation machinery in the graph.
     with tf.name_scope('ctc'):
-        ctc_mean = tf.reduce_mean(ctc.ctc_loss(target, logits, seq_lengths))
+        cost = tf.reduce_mean(ctc.ctc_loss(targets, logits, seq_lengths))
+        tf.summary.scalar('ctc_cost', cost)
 
     with tf.name_scope('train'), tf.control_dependencies(control_dependencies):
         learning_rate_input = tf.placeholder(tf.float32, [], name='learning_rate_input')
-        train_step = tf.train.GradientDescentOptimizer(learning_rate_input).minimize(ctc_mean)
+        optimizer = tf.train.GradientDescentOptimizer(learning_rate_input).minimize(cost)
 
     decoded, log_prob = ctc.ctc_beam_search_decoder(logits, seq_lengths)
 
-    evaluation_step = tf.reduce_mean(tf.edit_distance(tf.cast(decoded[0], tf.int32), target))  # label error rate
+    evaluation_step = tf.reduce_mean(tf.edit_distance(tf.cast(decoded[0], tf.int32), targets))  # label error rate
+    tf.summary.scalar('ler', evaluation_step)
 
     global_step = tf.contrib.framework.get_or_create_global_step()
     increment_global_step = tf.assign(global_step, global_step + 1)
 
     saver = tf.train.Saver(tf.global_variables())
 
-    # Merge all the summaries and write them out to /tmp/retrain_logs (by default)
+    # Merge all the summaries and write them out
     merged_summaries = tf.summary.merge_all()
     train_writer = tf.summary.FileWriter(FLAGS.summaries_dir + '/train',
-                                         sess.graph)
+                                         session.graph)
     validation_writer = tf.summary.FileWriter(FLAGS.summaries_dir + '/validation')
 
     tf.global_variables_initializer().run()
+
     start_step = 1
+
+    if FLAGS.start_checkpoint:
+        # TODO
+      #  models.load_variables_from_checkpoint(session, FLAGS.start_checkpoint)
+        start_step = global_step.eval(session=session)
+
+    tf.logging.info('Training from step: %d ', start_step)
+
+    # Save graph.pbtxt.
+    tf.train.write_graph(session.graph_def, FLAGS.train_dir,
+                         FLAGS.model_architecture + '.pbtxt')
+
+
     # Training loop.
     training_steps_max = np.sum(training_steps_list)
     for training_step in xrange(start_step, training_steps_max + 1):
+        train_cost = train_ler = 0
         # Figure out what the current learning rate is.
         training_steps_sum = 0
         for i in range(len(training_steps_list)):
@@ -90,89 +108,49 @@ def run():
         # Pull the audio samples we'll use for training.
 
         train_data = dp.load_batched_data(FLAGS.data_path, FLAGS.batch_size, FLAGS.mode)
+        batch_number = 0
+        for batch in train_data:
+            train_inputs, train_targets, train_seq_len, original = dp.handle_batch(batch)
 
-       # train_fingerprints, train_ground_truth = audio_processor.get_data(
-       #     FLAGS.batch_size, 0, model_settings, FLAGS.background_frequency,
-       #    FLAGS.background_volume, time_shift_samples, 'training', sess)
-        # Run the graph with this batch of training data.
-        train_summary, train_accuracy, cross_entropy_value, _, _ = sess.run(
-            [
-                merged_summaries, evaluation_step, ctc_mean, train_step,
-                increment_global_step
-            ],
-            feed_dict={
-            # TODO: map data
-            #    fingerprint_input: train_fingerprints,
-            #    ground_truth_input: train_ground_truth,
-                learning_rate_input: learning_rate_value,
-            })
-        train_writer.add_summary(train_summary, training_step)
-        tf.logging.info('Step #%d: rate %f, accuracy %.1f%%, cross entropy %f' %
-                        (training_step, learning_rate_value, train_accuracy * 100,
-                         cross_entropy_value))
-        is_last_step = (training_step == training_steps_max)
-        # TODO: implement validation
-        # if (training_step % FLAGS.eval_step_interval) == 0 or is_last_step:
-        #     set_size = audio_processor.set_size('validation')
-        #     total_accuracy = 0
-        #     total_conf_matrix = None
-        #     for i in xrange(0, set_size, FLAGS.batch_size):
-        #         validation_fingerprints, validation_ground_truth = (
-        #             audio_processor.get_data(FLAGS.batch_size, i, model_settings, 0.0,
-        #                                      0.0, 0, 'validation', sess))
-        #         # Run a validation step and capture training summaries for TensorBoard
-        #         # with the `merged` op.
-        #         validation_summary, validation_accuracy, conf_matrix = sess.run(
-        #             [merged_summaries, evaluation_step, confusion_matrix],
-        #             feed_dict={
-        #                 fingerprint_input: validation_fingerprints,
-        #                 ground_truth_input: validation_ground_truth,
-        #                 dropout_prob: 1.0
-        #             })
-        #         validation_writer.add_summary(validation_summary, training_step)
-        #         batch_size = min(FLAGS.batch_size, set_size - i)
-        #         total_accuracy += (validation_accuracy * batch_size) / set_size
-        #         if total_conf_matrix is None:
-        #             total_conf_matrix = conf_matrix
-        #         else:
-        #             total_conf_matrix += conf_matrix
-        #     tf.logging.info('Confusion Matrix:\n %s' % (total_conf_matrix))
-        #     tf.logging.info('Step %d: Validation accuracy = %.1f%% (N=%d)' %
-        #                     (training_step, total_accuracy * 100, set_size))
+            feed = {feature_number: train_inputs[0].shape[0],
+                    inputs: train_inputs,
+                    targets: train_targets,
+                    learning_rate_input: learning_rate_value,
+                    seq_lengths: train_seq_len}
+
+            train_summary, train_ler, ctc_cost, _, _ = session.run(
+                [merged_summaries, evaluation_step, cost, optimizer, increment_global_step], feed)
+
+            train_writer.add_summary(train_summary, training_step)
+
+            tf.logging.info('Batch #%d: rate %f, LER %.1f%%, CTC cost %f' %
+                            (batch_number, learning_rate_value, train_ler * 100, ctc_cost))
+            batch_number += 1
+
+        val_data = dp.load_batched_data(FLAGS.val_path, FLAGS.batch_size, FLAGS.mode)
+        total_accuracy = 0
+        for batch in val_data:
+            val_inputs, val_targets, val_seq_len, original = dp.handle_batch(batch)
+
+            feed = {feature_number: val_inputs[0].shape[0],
+                    inputs: val_inputs,
+                    targets: val_targets,
+                    seq_lengths: val_seq_len}
+
+            validation_summary, val_ler = session.run(
+                [merged_summaries, evaluation_step], feed)
+
+            validation_writer.add_summary(validation_summary, training_step)
+            total_accuracy += val_ler
+
+        tf.logging.info('Step %d: Validation LER = %.1f%%' %
+                       (training_step, total_accuracy * 100))
 
         # Save the model checkpoint periodically.
-        if (training_step % FLAGS.save_step_interval == 0 or
-                    training_step == training_steps_max):
-            checkpoint_path = os.path.join(FLAGS.train_dir,
-                                           FLAGS.model_architecture + '.ckpt')
+        if training_step % FLAGS.save_step_interval == 0 or training_step == training_steps_max:
+            checkpoint_path = os.path.join(FLAGS.train_dir, FLAGS.model_architecture + '.ckpt')
             tf.logging.info('Saving to "%s-%d"', checkpoint_path, training_step)
-            saver.save(sess, checkpoint_path, global_step=training_step)
-
-    # TODO: implement testing
-    # set_size = audio_processor.set_size('testing')
-    # tf.logging.info('set_size=%d', set_size)
-    # total_accuracy = 0
-    # total_conf_matrix = None
-    # for i in xrange(0, set_size, FLAGS.batch_size):
-    #     test_fingerprints, test_ground_truth = audio_processor.get_data(
-    #         FLAGS.batch_size, i, model_settings, 0.0, 0.0, 0, 'testing', sess)
-    #     test_accuracy, conf_matrix = sess.run(
-    #         [evaluation_step, confusion_matrix],
-    #         feed_dict={
-    #             fingerprint_input: test_fingerprints,
-    #             ground_truth_input: test_ground_truth,
-    #             dropout_prob: 1.0
-    #         })
-    #     batch_size = min(FLAGS.batch_size, set_size - i)
-    #     total_accuracy += (test_accuracy * batch_size) / set_size
-    #     if total_conf_matrix is None:
-    #         total_conf_matrix = conf_matrix
-    #     else:
-    #         total_conf_matrix += conf_matrix
-    # tf.logging.info('Confusion Matrix:\n %s' % (total_conf_matrix))
-    # tf.logging.info('Final test accuracy = %.1f%% (N=%d)' % (total_accuracy * 100,
-    #                                                          set_size))
-
+            saver.save(session, checkpoint_path, global_step=training_step)
 
 
 if __name__ == '__main__':
@@ -187,6 +165,10 @@ if __name__ == '__main__':
     parser.add_argument('--data_path',
                         type=str,
                         help='Path to data dir')
+
+    parser.add_argument('--val_path',
+                        type=str,
+                        help='Path to validation data dir')
 
     parser.add_argument('--model',
                         help='Name of neural network model',
