@@ -224,6 +224,7 @@ def main(_):
 
             tf.logging.info("Saving into " + output_path)
             numpy.savetxt(output_path, features, delimiter=",", header=str(vars(FLAGS)))
+    sess.close()
 
 
 if __name__ == "__main__":
