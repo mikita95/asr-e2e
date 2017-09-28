@@ -1,13 +1,13 @@
 # coding=utf-8
 import argparse
-import utils.data_processor as dp
-import models.ctc.ctc_utils as cu
-import tensorflow as tf
-import numpy as np
-from tensorflow.python.ops import ctc_ops as ctc
-import nn.models as md
-import os
 import sys
+import time
+from datetime import datetime
+
+import tensorflow as tf
+from tensorflow.python.ops import ctc_ops as ctc
+
+import nn.models as md
 
 FLAGS = None
 
@@ -15,138 +15,152 @@ FLAGS = None
 num_classes = ord('я') - ord('а') + 1 + 1 + 1
 
 
+def _variable_on_cpu(name, shape, initializer):
+    with tf.device('/cpu:0'):
+        dtype = tf.float16 if FLAGS.use_fp16 else tf.float32
+        var = tf.get_variable(name, shape, initializer=initializer, dtype=dtype)
+    return var
+
+
+def inputs():
+    if not FLAGS.data_dir:
+        raise ValueError('Please supply a data_dir')
+    from models.ctc import data_input
+    feature_vectors, labels = data_input.inputs(data_dir=FLAGS.data_dir,
+                                                max_examples_per_epoch=FLAGS.max_examples_per_epoch,
+                                                batch_size=FLAGS.batch_size, feature_settings=vars(FLAGS))
+
+    return feature_vectors, labels
+
+
+def inference(feature_vectors, seq_lengths):
+    return md.create_model(arch_type=FLAGS.model,
+                           feature_input=feature_vectors,
+                           seq_lengths=seq_lengths,
+                           settings=None,
+                           num_classes=num_classes,
+                           mode=FLAGS.mode)
+
+
+def compute_loss(logits, labels, seq_lengths):
+    loss = ctc.ctc_loss(labels, logits, seq_lengths)
+    cost = tf.reduce_mean(loss)
+    tf.add_to_collection('losses', cost)
+
+    return tf.add_n(tf.get_collection('losses'), name='total_loss')
+
+
+def _add_loss_summaries(total_loss):
+    loss_averages = tf.train.ExponentialMovingAverage(0.9, name='avg')
+    losses = tf.get_collection('losses')
+    loss_averages_op = loss_averages.apply(losses + [total_loss])
+
+    for l in losses + [total_loss]:
+        tf.summary.scalar(l.op.name + ' (raw)', l)
+        tf.summary.scalar(l.op.name, loss_averages.average(l))
+
+    return loss_averages_op
+
+
+def train(total_loss, global_step):
+    num_batches_per_epoch = FLAGS.max_examples_per_epoch / FLAGS.batch_size
+    decay_steps = int(num_batches_per_epoch * 350)
+
+    # Decay the learning rate exponentially based on the number of steps.
+    lr = tf.train.exponential_decay(0.1,
+                                    global_step,
+                                    decay_steps,
+                                    0.1,
+                                    staircase=True)
+    tf.summary.scalar('learning_rate', lr)
+
+    # Generate moving averages of all losses and associated summaries.
+    loss_averages_op = _add_loss_summaries(total_loss)
+
+    # Compute gradients.
+    with tf.control_dependencies([loss_averages_op]):
+        opt = tf.train.GradientDescentOptimizer(lr)
+        grads = opt.compute_gradients(total_loss)
+
+    # Apply gradients.
+    apply_gradient_op = opt.apply_gradients(grads, global_step=global_step)
+
+    # Add histograms for trainable variables.
+    for var in tf.trainable_variables():
+        tf.summary.histogram(var.op.name, var)
+
+    # Add histograms for gradients.
+    for grad, var in grads:
+        if grad is not None:
+            tf.summary.histogram(var.op.name + '/gradients', grad)
+
+    # Track the moving averages of all trainable variables.
+    variable_averages = tf.train.ExponentialMovingAverage(0.9999, global_step)
+    variables_averages_op = variable_averages.apply(tf.trainable_variables())
+
+    with tf.control_dependencies([apply_gradient_op, variables_averages_op]):
+        train_op = tf.no_op(name='train')
+
+    return train_op
+
+
 def run(_):
-    # We want to see all the logging messages for this tutorial.
-
-    tf.logging.set_verbosity(tf.logging.INFO)
-
-    training_steps_list = list(map(int, FLAGS.how_many_training_steps.split(',')))
-    learning_rates_list = list(map(float, FLAGS.learning_rate.split(',')))
-
-    if len(training_steps_list) != len(learning_rates_list):
-        raise Exception(
-            '--how_many_training_steps and --learning_rate must be equal length '
-            'lists, but are %d and %d long instead' % (len(training_steps_list),
-                                                        len(learning_rates_list)))
-
-    control_dependencies = []
-    if FLAGS.check_nans:
-        checks = tf.add_check_numerics_ops()
-        control_dependencies = [checks]
-
-    feature_number = tf.placeholder(tf.int32, name='feature_number')  # e.g. number of cepstrals in mfcc
-
-    # [batch_size x max_time x num_classes]
-    inputs = tf.placeholder(tf.float32, shape=[None, None, feature_number], name='inputs')
-
-    # Here we use sparse_placeholder that will generate a
-    # SparseTensor required by ctc_loss op.
-    targets = tf.sparse_placeholder(tf.int32, name='targets')
-
-    # Lengths of the audio sequences in frames, array [batch_size]
-    seq_lengths = tf.placeholder(tf.int32, shape=FLAGS.batch_size, name='seq_lengths')
-
-    # TODO: DIM?
-    logits = md.create_model(arch_type=FLAGS.model,
-                             feature_input=inputs,
-                             seq_lengths=seq_lengths,
-                             settings=None,
-                             num_classes=num_classes,
-                             mode=FLAGS.mode)
-
-    with tf.name_scope('ctc_cost'):
-        loss = ctc.ctc_loss(targets, logits, seq_lengths)
-        cost = tf.reduce_mean(loss)
-
-    tf.summary.scalar('ctc_cost', cost)
-    with tf.name_scope('train'), tf.control_dependencies(control_dependencies):
-        learning_rate_input = tf.placeholder(tf.float32, [], name='learning_rate_input')
-        optimizer = tf.train.GradientDescentOptimizer(learning_rate_input).minimize(cost)
-
-    decoded, log_prob = ctc.ctc_beam_search_decoder(logits, seq_lengths)
-
-    evaluation_step = tf.reduce_mean(tf.edit_distance(tf.cast(decoded[0], tf.int32), targets))  # label error rate
-    tf.summary.scalar('ler', evaluation_step)
-
-    with tf.Session() as session:
+    with tf.Graph().as_default():
         global_step = tf.contrib.framework.get_or_create_global_step()
-        increment_global_step = tf.assign(global_step, global_step + 1)
 
-        saver = tf.train.Saver(tf.global_variables())
+        # Get feature_vectors and labels for CIFAR-10.
+        # Force input pipeline to CPU:0 to avoid operations sometimes ending up on
+        # GPU and resulting in a slow down.
+        with tf.device('/cpu:0'):
+            feature_vectors, labels = inputs()
 
-        # Merge all the summaries and write them out
-        merged_summaries = tf.summary.merge_all()
-        train_writer = tf.summary.FileWriter(FLAGS.summaries_dir + '/train', session.graph)
-        validation_writer = tf.summary.FileWriter(FLAGS.summaries_dir + '/validation')
+        seq_lengths = [feature_vectors.shape[1]] * feature_vectors.shape[0]
+        # Build a Graph that computes the logits predictions from the
+        # inference model.
+        logits = inference(feature_vectors, seq_lengths)
 
-        tf.global_variables_initializer().run()
+        # Calculate loss.
+        loss = compute_loss(logits, labels, seq_lengths)
 
-        start_step = 1
+        # Build a Graph that trains the model with one batch of examples and
+        # updates the model parameters.
+        train_op = train(loss, global_step)
 
-        if FLAGS.start_checkpoint:
-            md.load_variables_from_checkpoint(session, FLAGS.start_checkpoint)
-            start_step = global_step.eval(session=session)
+        class _LoggerHook(tf.train.SessionRunHook):
+            """Logs loss and runtime."""
 
-        tf.logging.info('Training from step: %d ', start_step)
+            def begin(self):
+                self._step = -1
+                self._start_time = time.time()
 
-        # Save graph.pbtxt.
-        tf.train.write_graph(session.graph_def, FLAGS.train_dir, FLAGS.model_architecture + '.pbtxt')
+            def before_run(self, run_context):
+                self._step += 1
+                return tf.train.SessionRunArgs(loss)  # Asks for loss value.
 
-        # Training loop.
-        training_steps_max = np.sum(training_steps_list)
-        for training_step in range(start_step, training_steps_max + 1):
-            # Figure out what the current learning rate is.
-            training_steps_sum = 0
-            for i in range(len(training_steps_list)):
-                training_steps_sum += training_steps_list[i]
-                if training_step <= training_steps_sum:
-                    learning_rate_value = learning_rates_list[i]
-                    break
-            # Pull the audio samples we'll use for training.
+            def after_run(self, run_context, run_values):
+                if self._step % FLAGS.log_frequency == 0:
+                    current_time = time.time()
+                    duration = current_time - self._start_time
+                    self._start_time = current_time
 
-            train_data = dp.load_batched_data(FLAGS.data_path, FLAGS.batch_size, FLAGS.mode)
-            batch_number = 0
-            for batch in train_data:
-                train_inputs, train_targets, train_seq_len, originals = cu.handle_batch(batch)
+                    loss_value = run_values.results
+                    examples_per_sec = FLAGS.log_frequency * FLAGS.batch_size / duration
+                    sec_per_batch = float(duration / FLAGS.log_frequency)
 
-                feed = {feature_number: train_inputs.shape[2],
-                        inputs: train_inputs,
-                        targets: train_targets,
-                        learning_rate_input: learning_rate_value,
-                        seq_lengths: train_seq_len}
+                    format_str = ('%s: step %d, loss = %.2f (%.1f examples/sec; %.3f '
+                                  'sec/batch)')
+                    print(format_str % (datetime.now(), self._step, loss_value,
+                                        examples_per_sec, sec_per_batch))
 
-                train_summary, train_ler, ctc_cost, _, _ = session.run(
-                    [merged_summaries, evaluation_step, cost, optimizer, increment_global_step], feed)
-
-                train_writer.add_summary(train_summary, training_step)
-
-                tf.logging.info('Batch #%d: rate %f, LER %.1f%%, CTC cost %f' %
-                                (batch_number, learning_rate_value, train_ler * 100, ctc_cost))
-                batch_number += 1
-
-            val_data = dp.load_batched_data(FLAGS.val_path, FLAGS.batch_size, FLAGS.mode)
-            total_accuracy = 0
-            for batch in val_data:
-                val_inputs, val_targets, val_seq_len, originals = cu.handle_batch(batch)
-
-                feed = {feature_number: val_inputs.shape[2],
-                        inputs: val_inputs,
-                        targets: val_targets,
-                        seq_lengths: val_seq_len}
-
-                validation_summary, val_ler = session.run(
-                    [merged_summaries, evaluation_step], feed)
-
-                validation_writer.add_summary(validation_summary, training_step)
-                total_accuracy += val_ler
-
-            tf.logging.info('Step %d: Validation LER = %.1f%%' % (training_step, total_accuracy * 100))
-
-            # Save the model checkpoint periodically.
-            if training_step % FLAGS.save_step_interval == 0 or training_step == training_steps_max:
-                checkpoint_path = os.path.join(FLAGS.train_dir, FLAGS.model_architecture + '.ckpt')
-                tf.logging.info('Saving to "%s-%d"', checkpoint_path, training_step)
-                saver.save(session, checkpoint_path, global_step=training_step)
+        with tf.train.MonitoredTrainingSession(
+                checkpoint_dir=FLAGS.train_dir,
+                hooks=[tf.train.StopAtStepHook(last_step=FLAGS.max_steps),
+                       tf.train.NanTensorHook(loss),
+                       _LoggerHook()],
+                config=tf.ConfigProto(
+                    log_device_placement=FLAGS.log_device_placement)) as mon_sess:
+            while not mon_sess.should_stop():
+                mon_sess.run(train_op)
 
 
 if __name__ == '__main__':
@@ -190,6 +204,11 @@ if __name__ == '__main__':
                         default=100,
                         help='How many items to train with at once')
 
+    parser.add_argument('--max_examples_per_epoch',
+                        type=int,
+                        default=1000,
+                        help='How many examples per epoch to train with')
+
     parser.add_argument('--summaries_dir',
                         type=str,
                         default='/tmp/retrain_logs',
@@ -214,5 +233,38 @@ if __name__ == '__main__':
                         type=bool,
                         default=False,
                         help='Whether to check for invalid numbers during processing')
+
+    parser.add_argument("--mode",
+                        help="Mode",
+                        choices=['mfcc', 'fbank', 'raw'],
+                        type=str,
+                        default='mfcc')
+
+    parser.add_argument("--format",
+                        help="Format of files",
+                        choices=['wav', 'mp3'],
+                        type=str,
+                        default='wav')
+
+    parser.add_argument("--rate",
+                        help="Sample rate of the audio files",
+                        type=int,
+                        default=16000)
+
+    parser.add_argument("--channels",
+                        help="Number of channels of the audio files",
+                        type=int,
+                        default=1)
+
+    parser.add_argument("--winlen", type=float, default=0.025)
+    parser.add_argument("--winstep", type=float, default=0.01)
+    parser.add_argument("--numcep", type=int, default=13)
+    parser.add_argument("--nfilt", type=int, default=26)
+    parser.add_argument("--nfft", type=int, default=512)
+    parser.add_argument("--lowfreq", type=int, default=0)
+    parser.add_argument("--highfreq", type=int, default=None)
+    parser.add_argument("--ceplifter", type=int, default=22)
+    parser.add_argument("--preemph", type=float, default=0.97)
+    parser.add_argument("--appendEnergy", type=bool, default=True)
     FLAGS, unparsed = parser.parse_known_args()
     tf.app.run(main=run, argv=[sys.argv[0]] + unparsed)
