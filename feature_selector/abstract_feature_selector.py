@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-
+import tensorflow as tf
 from tensorflow.contrib import ffmpeg
 
 
@@ -25,8 +25,7 @@ def load_audio_file(file_path, file_format,
     if samples_per_second_tensor is None:
         samples_per_second_tensor = samples_per_second
 
-    with open(file_path, 'rb') as f:
-        contents = f.read()
+    contents = tf.read_file(file_path)
 
     audio_op = ffmpeg.decode_audio(
         contents,
