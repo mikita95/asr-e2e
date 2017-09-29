@@ -1,6 +1,7 @@
+# coding=utf-8
 import numpy as np
 import utils.data_processor as dp
-import utils.utils as ut
+import utils.util as ut
 
 
 SPACE_TOKEN = '<space>'

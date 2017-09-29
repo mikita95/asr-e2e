@@ -1,8 +1,10 @@
-from abc import ABC, abstractmethod
-from utils.utils import describe
+from abc import ABCMeta, abstractmethod
+from utils.util import describe
 
 
-class Model(ABC):
+class Model:
+    __metaclass__ = ABCMeta
+
     def __init__(self, feature_input, seq_lengths, mode, num_classes, settings=None):
         self.input = feature_input
         self.seq_lengths = seq_lengths

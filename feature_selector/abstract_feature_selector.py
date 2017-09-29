@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
+
 from tensorflow.contrib import ffmpeg
-from models.ctc.data_input import MFCCSelector, FBANKSelector
 
 
 def load_audio_file(file_path, file_format,
@@ -55,11 +55,3 @@ class FeatureSelector(ABC):
         audio = load_audio_file(file_path, file_format, samples_per_second, channel_count)
         return self._get_feature_vector(audio, feature_settings, samples_per_second)
 
-    @staticmethod
-    def get_feature_selector(selector_name='mfcc'):
-        if selector_name == 'mfcc':
-            return MFCCSelector()
-        elif selector_name == 'fbank':
-            return FBANKSelector()
-        else:
-            raise TypeError('No such feature selector.')

@@ -1,9 +1,10 @@
+# coding=utf-8
 from unittest import TestCase
 
 
 class TestCTCUtils(TestCase):
     def test_convert_input_to_ctc_format(self):
-        from models.ctc.ctc_utils import convert_input_to_ctc_format
+        from models.ctc_utils import convert_input_to_ctc_format
         import numpy
 
         expected_seq_length = 10
@@ -16,7 +17,7 @@ class TestCTCUtils(TestCase):
         self.assertEqual([expected_seq_length], seq_length)
 
     def test_handle_feature_vectors_batch(self):
-        from models.ctc.ctc_utils import handle_feature_vectors_batch
+        from models.ctc_utils import handle_feature_vectors_batch
         import numpy
 
         min_length = 2

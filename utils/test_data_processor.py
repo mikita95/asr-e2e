@@ -17,7 +17,7 @@ def mock_file(file_path, content=''):
 
 class TestDataProcessor(TestCase):
     def test_parse_labels_file(self):
-        from utils.data_processor import parse_labels_file
+        from util.data_processor import parse_labels_file
 
         content = '( essv_001 "зима была долгой и вьюжной" )\n( essv_002 "это сейчас пройдет" )'
 
@@ -29,7 +29,7 @@ class TestDataProcessor(TestCase):
             self.assertDictEqual(expected, actual)
 
     def test_pad_feature_vectors(self):
-        from utils.data_processor import pad_feature_vectors
+        from util.data_processor import pad_feature_vectors
         import numpy
 
         # test data:

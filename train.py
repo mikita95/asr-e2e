@@ -6,9 +6,7 @@ from datetime import datetime
 
 import tensorflow as tf
 from tensorflow.python.ops import ctc_ops as ctc
-
-import nn.models as md
-
+import nn.models_builder as md
 FLAGS = None
 
 # Accounting the 0th index + space + blank label = 28 characters
@@ -23,10 +21,10 @@ def _variable_on_cpu(name, shape, initializer):
 
 
 def inputs():
-    if not FLAGS.data_dir:
+    if not FLAGS.data_path:
         raise ValueError('Please supply a data_dir')
     from models.ctc import data_input
-    feature_vectors, labels = data_input.inputs(data_dir=FLAGS.data_dir,
+    feature_vectors, labels = data_input.inputs(data_dir=FLAGS.data_path,
                                                 max_examples_per_epoch=FLAGS.max_examples_per_epoch,
                                                 batch_size=FLAGS.batch_size, feature_settings=vars(FLAGS))
 
@@ -166,11 +164,11 @@ def run(_):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='trainer', description='Script to train and test nn')
 
-    parser.add_argument('--mode',
-                        type=str,
-                        help='Running mode',
-                        choices=['train', 'test'],
-                        default='train')
+    #parser.add_argument('--mode',
+    #                    type=str,
+    #                    help='Running mode',
+    #                    choices=['train', 'test'],
+    #                    default='train')
 
     parser.add_argument('--data_path',
                         type=str,

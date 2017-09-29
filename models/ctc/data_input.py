@@ -1,8 +1,10 @@
-import tensorflow as tf
 import os
 import re
-from feature_selector.abstract_feature_selector import FeatureSelector
+
 import numpy as np
+import tensorflow as tf
+
+from feature_selector.feature_selector_builder import get_feature_selector
 
 SPACE_TOKEN = '<space>'
 SPACE_INDEX = 0
@@ -35,7 +37,7 @@ def read_data(examples_queue, feature_settings, rate=16000, channel_count=1, mod
             self.feature_vector = None
 
     result = DataRecord()
-    feature_selector = FeatureSelector.get_feature_selector(mode)
+    feature_selector = get_feature_selector(mode)
     feature_vector = feature_selector.get_feature_vector(file_path=examples_queue[0],
                                                          feature_settings=feature_settings,
                                                          samples_per_second=rate,
@@ -94,7 +96,8 @@ def data_dir_handle(data_dir, format='wav'):
 
             #  append pair (path to the audio file, label text of the file)
             audio_file_paths.append(audio_file_path)
-            labels.append(labels_of_current_subset[audio_file_name])
+            example_name = os.path.splitext(audio_file_name)[0]
+            labels.append(labels_of_current_subset[example_name])
 
     return audio_file_paths, labels
 
