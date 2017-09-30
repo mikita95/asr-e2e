@@ -7,13 +7,17 @@ class LSTM(am.Model):
         num_hidden = 64
         num_layers = 3
 
-        cell = tf.contrib.rnn.LSTMCell(num_hidden, state_is_tuple=True)
-
+        stacked_rnn = []
+        for i in range(3):
+            stacked_rnn.append(tf.contrib.rnn.LSTMCell(num_hidden, state_is_tuple=True))
         # Stacking rnn cells
-        stack = tf.contrib.rnn.MultiRNNCell([cell] * num_layers,
+        stack = tf.contrib.rnn.MultiRNNCell(stacked_rnn,
                                             state_is_tuple=True)
 
+
+
         # The second output is the last state and we will no use that
+
         outputs, _ = tf.nn.dynamic_rnn(stack, self.input, self.seq_lengths, dtype=tf.float32)
 
         shape = tf.shape(self.input)

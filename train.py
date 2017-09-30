@@ -7,14 +7,15 @@ import numpy as np
 from tensorflow.python.ops import ctc_ops as ctc
 import nn.models as md
 import os
+import sys
 
 FLAGS = None
 
-# Accounting the 0th index + space + blank label = 28 characters
-num_classes = ord('я') - ord('а') + 1 + 1 + 1
+# Accounting the 0th index + space + blank label = 34 characters
+num_classes = ord('я') - ord('а') + 1 + 1 + 1 + 1
 
 
-def run():
+def run(_):
     # We want to see all the logging messages for this tutorial.
     tf.logging.set_verbosity(tf.logging.INFO)
 
@@ -31,18 +32,18 @@ def run():
                                                        len(learning_rates_list)))
 
     control_dependencies = []
-    if FLAGS.check_nans:
-        checks = tf.add_check_numerics_ops()
-        control_dependencies = [checks]
+    #if FLAGS.check_nans:
+    #    checks = tf.add_check_numerics_ops()
+    #    control_dependencies = [checks]
 
     # Here we use sparse_placeholder that will generate a
     # SparseTensor required by ctc_loss op.
     targets = tf.sparse_placeholder(tf.int32, name='targets')
 
-    feature_number = tf.placeholder(tf.int32, name='feature_number')  # e.g. number of cepstrals in mfcc
+    #feature_number = tf.placeholder(tf.int32, name='feature_number')  # e.g. number of cepstrals in mfcc
 
     # [batch_size x max_time x num_classes]
-    inputs = tf.placeholder(tf.float32, [None, None, feature_number], name='inputs')
+    inputs = tf.placeholder(tf.float32, [FLAGS.batch_size, None, 13], name='inputs')
 
     # Lengths of the audio sequences in frames, array [batch_size]
     seq_lengths = tf.placeholder(tf.int32, shape=FLAGS.batch_size, name='seq_lengths')
@@ -57,13 +58,13 @@ def run():
 
     # Create the back propagation and training evaluation machinery in the graph.
     with tf.name_scope('ctc'):
-        cost = tf.reduce_mean(ctc.ctc_loss(targets, logits, seq_lengths))
+        cost = tf.reduce_mean(ctc.ctc_loss(labels=targets, inputs=logits, sequence_length=seq_lengths, time_major=True))
         tf.summary.scalar('ctc_cost', cost)
 
     with tf.name_scope('train'), tf.control_dependencies(control_dependencies):
         learning_rate_input = tf.placeholder(tf.float32, [], name='learning_rate_input')
         optimizer = tf.train.GradientDescentOptimizer(learning_rate_input).minimize(cost)
-
+    #logits = tf.transpose(logits, (1, 0, 2))
     decoded, log_prob = ctc.ctc_beam_search_decoder(logits, seq_lengths)
 
     evaluation_step = tf.reduce_mean(tf.edit_distance(tf.cast(decoded[0], tf.int32), targets))  # label error rate
@@ -91,11 +92,12 @@ def run():
     tf.logging.info('Training from step: %d ', start_step)
 
     # Save graph.pbtxt.
-    tf.train.write_graph(session.graph_def, FLAGS.train_dir, FLAGS.model_architecture + '.pbtxt')
+    tf.train.write_graph(session.graph_def, FLAGS.train_dir, FLAGS.model + '.pbtxt')
 
     # Training loop.
     training_steps_max = np.sum(training_steps_list)
-    for training_step in xrange(start_step, training_steps_max + 1):
+    for training_step in range(start_step, training_steps_max + 1):
+        train_cost = train_ler = 0
         # Figure out what the current learning rate is.
         training_steps_sum = 0
         for i in range(len(training_steps_list)):
@@ -105,14 +107,15 @@ def run():
                 break
         # Pull the audio samples we'll use for training.
 
-        train_data = dp.load_batched_data(FLAGS.data_path, FLAGS.batch_size, FLAGS.mode)
+        train_data = dp.load_batched_data(FLAGS.data_path, FLAGS.batch_size)
         batch_number = 0
         for batch in train_data:
             train_inputs, train_targets, train_seq_len, originals = cu.handle_batch(batch)
+            sparse_targets = tf.SparseTensorValue(indices=train_targets[0], values=train_targets[1], dense_shape=train_targets[2])
 
-            feed = {feature_number: train_inputs.shape[2],
+            feed = {#feature_number: train_inputs.shape[2],
                     inputs: train_inputs,
-                    targets: train_targets,
+                    targets: sparse_targets,
                     learning_rate_input: learning_rate_value,
                     seq_lengths: train_seq_len}
 
@@ -125,12 +128,13 @@ def run():
                             (batch_number, learning_rate_value, train_ler * 100, ctc_cost))
             batch_number += 1
 
-        val_data = dp.load_batched_data(FLAGS.val_path, FLAGS.batch_size, FLAGS.mode)
+        val_data = dp.load_batched_data(FLAGS.val_path, FLAGS.batch_size)
         total_accuracy = 0
         for batch in val_data:
             val_inputs, val_targets, val_seq_len, originals = cu.handle_batch(batch)
 
-            feed = {feature_number: val_inputs.shape[2],
+
+            feed = {#feature_number: val_inputs.shape[2],
                     inputs: val_inputs,
                     targets: val_targets,
                     seq_lengths: val_seq_len}
@@ -188,7 +192,7 @@ if __name__ == '__main__':
 
     parser.add_argument('--batch_size',
                         type=int,
-                        default=100,
+                        default=10,
                         help='How many items to train with at once')
 
     parser.add_argument('--summaries_dir',
@@ -210,4 +214,5 @@ if __name__ == '__main__':
                         type=str,
                         default='',
                         help='If specified, restore this pretrained model before any training.')
-    run()
+    FLAGS, unparsed = parser.parse_known_args()
+    tf.app.run(main=run, argv=[sys.argv[0]] + unparsed)

@@ -1,11 +1,14 @@
+# coding=utf-8
 import numpy as np
 import utils.data_processor as dp
 import utils.utils as ut
+import tensorflow as tf
 
 
 SPACE_TOKEN = '<space>'
 SPACE_INDEX = 0
 FIRST_INDEX = ord('а') - 1  # 0 is reserved to space
+YO_INDEX = ord('я') + 1
 
 
 def convert_input_to_ctc_format(feature_vector, target_text):
@@ -22,6 +25,7 @@ def convert_input_to_ctc_format(feature_vector, target_text):
                    original is a list of original words parsed from target_text
     """
     # Transform into 3D array
+    #tf.logging.info('Converting example to ctc format, label text is %s ', target_text)
     feature_tensor = np.asarray(feature_vector[np.newaxis, :])  # [1 x seq_length x num_cep]
     feature_tensor = (feature_tensor - np.mean(feature_tensor)) / np.std(feature_tensor)  # normalize
     seq_length = [feature_tensor.shape[1]]
@@ -36,8 +40,16 @@ def convert_input_to_ctc_format(feature_vector, target_text):
     # Adding blank label
     targets = np.hstack([SPACE_TOKEN if x == '' else list(x) for x in targets])  # array [number_of_characters + blanks]
 
+    ids = []
+    for x in targets:
+        if x == SPACE_TOKEN:
+            ids.append(SPACE_INDEX)
+        elif x == 'ё':
+            ids.append(YO_INDEX - FIRST_INDEX)
+        else:
+            ids.append(ord(x) - FIRST_INDEX)
     # Transform char into index, array [number_of_characters + blanks]
-    target = np.asarray([SPACE_INDEX if x == SPACE_TOKEN else ord(x) - FIRST_INDEX for x in targets])
+    target = np.asarray(ids)
 
     return feature_tensor, target, seq_length, original
 
@@ -89,8 +101,9 @@ def handle_feature_vectors_batch(feature_vectors_batch):
 
     """
     # Make all feature vectors' dims equal
+    tf.logging.info('Handling feature vector batch of size %d ', len(feature_vectors_batch))
     padded_batch = dp.pad_feature_vectors(feature_vectors_batch)  # list of [[max(seq_length) x num_cep] arrays, text]
-
+    tf.logging.info('Get padded feature vector batch of size %d ', len(padded_batch))
     return convert_inputs_to_ctc_format(padded_batch)
 
 
@@ -107,6 +120,7 @@ def handle_batch(batch):
              originals is a list of lists containing original words
 
     """
-    feature_vectors_batch = \
-        map(lambda x: [dp.parse_example_file(x[0]), x[1]], batch)  # list of [[seq_length x num_cep] arrays, text]
+    tf.logging.info('Handling batch of size %d ', len(batch))
+    feature_vectors_batch = [(dp.parse_example_file(x[0]), x[1]) for x in batch]  # list of [[seq_length x num_cep] arrays, text]
+
     return handle_feature_vectors_batch(feature_vectors_batch)

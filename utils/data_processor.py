@@ -77,7 +77,10 @@ def load_batched_data(data_path, batch_size, mode='mfcc', randomize=False):
 
         for example_file_name in os.listdir(mode_dir_path):  # essv_001.csv
             example_name = os.path.splitext(example_file_name)[0]  # essv_001
+
             example_file_path = os.path.join(mode_dir_path, example_file_name)  # data/001/mfcc/essv_001.csv
+            if example_name == '.csv':
+                print(example_file_path)
 
             all_examples.append([example_file_path, labels[example_name]])
 
