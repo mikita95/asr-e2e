@@ -10,6 +10,8 @@ FLAGS = None
 MODES = ['mfcc', 'fbank', 'raw']
 
 
+
+
 """
 Expected data directory structure:
     data >
@@ -28,6 +30,24 @@ Creates directories:
                     header [some metadata]
                     numpy array
 """
+
+ALPHABET = ' абвгдеёжзийклмнопрстуфхцчшщъыьэюя'
+NUM_CLASSES = len(ALPHABET) + 1  # Additional class for blank
+CHAR_TO_IX = {ch: i for (i, ch) in enumerate(ALPHABET)}
+
+
+def normalize_label_text(label_text):
+    return ' '.join(label_text.strip().lower().split(' ')).replace('.', '').replace('?', '').replace(',', ''). \
+        replace("'", '').replace('!', '').replace('-', '')
+
+
+def convert_label_to_ctc_format(label_text):
+    import numpy as np
+    original = normalize_label_text(label_text)
+
+    label = np.asarray([CHAR_TO_IX[c] for c in original if c in CHAR_TO_IX])
+
+    return label
 
 
 def parse_labels_file(file_path):
@@ -92,7 +112,7 @@ def encode_sequence_example(sequence, label):
 
     seq_length_feature = tf.train.Feature(int64_list=tf.train.Int64List(value=[seq_length]))
 
-    label_bytes_list = list(bytearray(label, encoding='utf8'))
+    label_bytes_list = convert_label_to_ctc_format(label)
 
     label_feature = tf.train.Feature(int64_list=tf.train.Int64List(value=label_bytes_list))
 

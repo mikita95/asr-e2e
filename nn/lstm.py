@@ -1,6 +1,20 @@
 import nn.abstract_model as am
 import tensorflow as tf
 
+def _activation_summary(act):
+    import re
+    """Helper to create summaries for activations.
+    Creates a summary that provides a histogram of activations.
+    Creates a summary that measure the sparsity of activations.
+    Args:
+      act: Tensor
+    """
+    # Remove 'tower_[0-9]/' from the name in case this is a multi-GPU training
+    # session. This helps the clarity of presentation on tensorboard.
+    tensor_name = re.sub('%s_[0-9]*/' % 'tower', '', act.op.name)
+    tf.summary.histogram(tensor_name + '/activations', act)
+    tf.summary.scalar(tensor_name + '/sparsity', tf.nn.zero_fraction(act))
+
 
 class LSTM(am.Model):
     def build_graph(self):
@@ -40,5 +54,7 @@ class LSTM(am.Model):
 
         # Time major
         logits = tf.transpose(logits, (1, 0, 2))
+
+        _activation_summary(logits)
 
         return logits

@@ -3,23 +3,7 @@ import os.path
 import glob
 import tensorflow as tf
 
-ALPHABET = ' абвгдеёжзийклмнопрстуфхцчшщъыьэюя'
-NUM_CLASSES = len(ALPHABET) + 1  # Additional class for blank
-CHAR_TO_IX = {ch: i for (i, ch) in enumerate(ALPHABET)}
 
-
-def normalize_label_text(label_text):
-    return ' '.join(label_text.strip().lower().split(' ')).replace('.', '').replace('?', '').replace(',', ''). \
-        replace("'", '').replace('!', '').replace('-', '')
-
-
-def convert_label_to_ctc_format(label_text):
-    import numpy as np
-    original = normalize_label_text(label_text)
-
-    label = np.asarray([CHAR_TO_IX[c] for c in original if c in CHAR_TO_IX])
-
-    return label
 
 
 def _generate_feats_and_label_batch(filename_queue, batch_size):
@@ -41,7 +25,7 @@ def _generate_feats_and_label_batch(filename_queue, batch_size):
         "label": tf.VarLenFeature(dtype=tf.int64)
     }
     sequence_features = {
-        "features": tf.FixedLenSequenceFeature([None, ], dtype=tf.float32)
+        "features": tf.FixedLenSequenceFeature([13, ], dtype=tf.float32)
     }
 
     # Parse the example (returns a dictionary of tensors)
@@ -81,3 +65,8 @@ def inputs(tfrecords_path, batch_size, shuffle=False):
 
     # Generate a batch of images and labels by building up a queue of examples.
     return _generate_feats_and_label_batch(filename_queue, batch_size)
+
+if __name__ == '__main__':
+    feats, labels, seq_len = inputs("/home/nikita/Development/my.tfrecord", 100)
+    with tf.Session():
+        print(labels.eval())
