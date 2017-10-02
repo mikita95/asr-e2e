@@ -105,6 +105,23 @@ def encode_sequence_example(sequence, label):
     return ex.SerializeToString()
 
 
+def decode_sequence_example(seq_example):
+    context_features = {
+        "seq_length": tf.FixedLenFeature([], dtype=tf.int64),
+        "label": tf.VarLenFeature(dtype=tf.int64)
+    }
+    sequence_features = {
+        "features": tf.FixedLenSequenceFeature([None, ], dtype=tf.float32)
+    }
+
+    # Parse the example (returns a dictionary of tensors)
+    context_parsed, sequence_parsed = tf.parse_single_sequence_example(
+        serialized=seq_example,
+        context_features=context_features,
+        sequence_features=sequence_features
+    )
+
+
 def write_tf_record(writer, feature_vector, label):
     ex = encode_sequence_example(feature_vector, label)
     writer.write(ex)

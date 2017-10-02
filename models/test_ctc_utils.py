@@ -38,3 +38,8 @@ class TestCTCUtils(TestCase):
         self.assertEqual((max_length - min_length + 1, 2), sparse_targets[0].shape)
         self.assertEqual((max_length - min_length + 1,), sparse_targets[1].shape)
         self.assertEqual((2,), sparse_targets[2].shape)
+
+    def test_convert_label_to_ctc_format(self):
+        import models.ctc_input as ci
+        print(ci.convert_label_to_ctc_format("Привет ёё звали Никита №"))
+
