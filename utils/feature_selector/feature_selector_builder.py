@@ -1,5 +1,6 @@
-from feature_selector.fbank_selector import FBANKSelector
-from feature_selector.mfcc_selector import MFCCSelector
+from utils.feature_selector.fbank_selector import FBANKSelector
+
+from utils.feature_selector.mfcc_selector import MFCCSelector
 
 
 def get_feature_selector(selector_name='mfcc'):

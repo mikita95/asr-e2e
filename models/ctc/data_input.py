@@ -4,7 +4,7 @@ import re
 import numpy as np
 import tensorflow as tf
 
-from feature_selector.feature_selector_builder import get_feature_selector
+from utils.feature_selector.feature_selector_builder import get_feature_selector
 
 SPACE_TOKEN = '<space>'
 SPACE_INDEX = 0

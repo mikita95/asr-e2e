@@ -1,11 +1,11 @@
 from abc import ABC, abstractmethod
 import tensorflow as tf
-from tensorflow.contrib import ffmpeg
 
 
 def load_audio_file(file_path, file_format,
                     samples_per_second, channel_count,
                     samples_per_second_tensor=None, feed_dict=None):
+    import soundfile as sf
     """
     Loads an audio file and decodes it.
     Args:
@@ -21,24 +21,25 @@ def load_audio_file(file_path, file_format,
 
     Returns: A numpy array corresponding to audio file.
     """
+    tf.logging.info("Handling audio file: " + file_path)
 
-    if samples_per_second_tensor is None:
-        samples_per_second_tensor = samples_per_second
+    # if samples_per_second_tensor is None:
+    #   samples_per_second_tensor = samples_per_second
+    audio_result, sample_rate = sf.read(file=file_path)
+    # contents = tf.read_file(file_path)
 
-    contents = tf.read_file(file_path)
+    #audio_op = ffmpeg.decode_audio(
+    #    contents,
+    #    file_format=file_format,
+    #    samples_per_second=samples_per_second_tensor,
+    #    channel_count=channel_count)
+    #with tf.Session():
+    #    audio_result = audio_op.eval(feed_dict=feed_dict or {})
 
-    audio_op = ffmpeg.decode_audio(
-        contents,
-        file_format=file_format,
-        samples_per_second=samples_per_second_tensor,
-        channel_count=channel_count)
-
-    audio_result = audio_op.eval(feed_dict=feed_dict or {})
-
-    assert len(audio_result.shape) == 2, \
-        'Expected audio shape length equals 2 but found %d(found_shape)' % len(audio_result.shape)
-    assert audio_result.shape[1] == channel_count, \
-        'Expected channel count %d(exp_ch) but found %d(found_ch)' % (channel_count, audio_result.shape[1])
+    #assert len(audio_result.shape) == 2, \
+    #    'Expected audio shape length equals 2 but found %d(found_shape)' % len(audio_result.shape)
+    #assert audio_result.shape[1] == channel_count, \
+    #    'Expected channel count %d(exp_ch) but found %d(found_ch)' % (channel_count, audio_result.shape[1])
 
     return audio_result
 

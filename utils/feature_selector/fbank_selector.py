@@ -1,5 +1,6 @@
 from python_speech_features import fbank
-from feature_selector.abstract_feature_selector import FeatureSelector
+
+from utils.feature_selector.abstract_feature_selector import FeatureSelector
 
 
 class FBANKSelector(FeatureSelector):
