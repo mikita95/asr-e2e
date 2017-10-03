@@ -1,5 +1,4 @@
 from abc import ABCMeta, abstractmethod
-from utils.util import describe
 
 
 class Model:
@@ -12,7 +11,6 @@ class Model:
         self.num_classes = num_classes
         self.settings = settings
 
-    @describe
     @abstractmethod
     def build_graph(self):
         pass

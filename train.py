@@ -53,15 +53,18 @@ def tower_loss(scope, feats, labels, seq_lens):
     """
 
     # Build inference Graph.
+
     logits = mb.create_model(arch_type=FLAGS.model,
                              feature_input=feats,
                              seq_lengths=seq_lens,
                              mode='train',
-                             num_classes=len(examples_writer.ALPHABET) + 1)
+                             num_classes=len(examples_writer.ALPHABET) + 1,
+                             settings=FLAGS)
+
 
     # Build the portion of the Graph calculating the losses. Note that we will
     # assemble the total_loss using a custom function below.
-    strided_seq_lens = tf.div(seq_lens)
+    strided_seq_lens = tf.div(seq_lens, FLAGS.temporal_stride)
     _ = loss_f(logits, labels, strided_seq_lens)
 
     # Assemble all of the losses for the current tower only.
@@ -117,7 +120,7 @@ def average_gradients(tower_grads):
             grads.append(expanded_g)
 
         # Average over the 'tower' dimension.
-        grad = tf.concat(0, grads)
+        grad = tf.concat(grads, 0)
         grad = tf.reduce_mean(grad, 0)
 
         # The variables are redundant because they are shared
@@ -157,18 +160,18 @@ def fetch_data():
     import models.ctc_input
     """ Fetch features, labels and sequence_lengths from a common queue."""
 
-    tot_batch_size = FLAGS.batch_sizes
+    tot_batch_size = FLAGS.batch_size
     feats, labels, seq_lens = models.ctc_input.inputs(
-                                                tfrecords_path=FLAGS.data_dir,
+                                                tfrecords_path=FLAGS.record_path,
                                                 batch_size=tot_batch_size,
                                                 shuffle=FLAGS.shuffle)
 
     # Split features and labels and sequence lengths for each tower
-    split_feats = tf.split(0, 1, feats)
-    split_labels = tf.sparse_split(0, 1, labels)
-    split_seq_lens = tf.split(0, 1, seq_lens)
+   # split_feats = tf.split(0, 1, feats)
+   # split_labels = tf.sparse_split(0, 1, labels)
+   # split_seq_lens = tf.split(0, 1, seq_lens)
 
-    return split_feats, split_labels, split_seq_lens
+    return feats, labels, seq_lens
 
 
 def get_loss_grads(data, optimizer):
@@ -179,27 +182,27 @@ def get_loss_grads(data, optimizer):
     global summaries, loss
     [feats, labels, seq_lens] = data
     tower_grads = []
-    for i in range(1):
-        with tf.device('/gpu:%d' % i):
-            name_scope = '%s_%d' % (TOWER_NAME, i)
-            with tf.name_scope(name_scope) as scope:
-                # Calculate the loss for one tower of the deepSpeech model.
-                # This function constructs the entire deepSpeech model
-                # but shares the variables across all towers.
-                loss = tower_loss(scope, feats[i], labels[i], seq_lens[i])
 
-                # Reuse variables for the next tower.
-                tf.get_variable_scope().reuse_variables()
+    with tf.device('/gpu:%d' % 1):
+        name_scope = '%s_%d' % (TOWER_NAME, 1)
+        with tf.name_scope(name_scope) as scope:
+            # Calculate the loss for one tower of the deepSpeech model.
+            # This function constructs the entire deepSpeech model
+            # but shares the variables across all towers.
+            loss = tower_loss(scope, feats, labels, seq_lens)
 
-                # Retain the summaries from the final tower.
-                summaries = tf.get_collection(tf.GraphKeys.SUMMARIES, scope)
+            # Reuse variables for the next tower.
+            #tf.get_variable_scope().reuse_variables()
 
-                # Calculate the gradients for the batch of
-                # data on this tower.
-                grads_and_vars = optimizer.compute_gradients(loss)
+            # Retain the summaries from the final tower.
+            summaries = tf.get_collection(tf.GraphKeys.SUMMARIES, scope)
 
-                # Keep track of the gradients across all towers.
-                tower_grads.append(grads_and_vars)
+            # Calculate the gradients for the batch of
+            # data on this tower.
+            grads_and_vars = optimizer.compute_gradients(loss)
+
+            # Keep track of the gradients across all towers.
+            tower_grads.append(grads_and_vars)
 
     return loss, tower_grads, summaries
 
@@ -286,7 +289,7 @@ def train():
         learning_rate, global_step = set_learning_rate()
 
         # Create an optimizer that performs gradient descent.
-        optimizer = tf.train.AdamOptimizer(learning_rate)
+        optimizer = tf.train.GradientDescentOptimizer(learning_rate)
 
         # Fetch a batch worth of data for each tower
         data = fetch_data()
@@ -344,7 +347,7 @@ if __name__ == '__main__':
     num_gpus = len([x for x in device_lib.list_local_devices()
                     if x.device_type == "GPU"])
 
-    parser.add_argument('--data_path',
+    parser.add_argument('--record_path',
                         type=str,
                         help='Path to data dir')
 
@@ -359,7 +362,7 @@ if __name__ == '__main__':
 
     parser.add_argument('--batch_size',
                         type=int,
-                        default=100,
+                        default=32,
                         help='How many items to train with at once')
 
     parser.add_argument('--max_examples_per_epoch',
@@ -395,8 +398,7 @@ if __name__ == '__main__':
                         help='How many GPUs to use')
     parser.add_argument('--log_device_placement', type=bool, default=False,
                         help='Whether to log device placement')
-    parser.add_argument('--batch_size', type=int, default=32,
-                        help='Number of inputs to process in a batch per GPU')
+
     parser.add_argument('--temporal_stride', type=int, default=2,
                         help='Stride along time')
 
@@ -431,4 +433,5 @@ if __name__ == '__main__':
                         help='Learning rate decay factor')
 
     FLAGS, unparsed = parser.parse_known_args()
+    train()
 

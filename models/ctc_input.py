@@ -4,8 +4,6 @@ import glob
 import tensorflow as tf
 
 
-
-
 def _generate_feats_and_label_batch(filename_queue, batch_size):
     """Construct a queued batch of spectral features and transcriptions.
     Args:
