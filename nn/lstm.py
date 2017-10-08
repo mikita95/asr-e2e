@@ -93,7 +93,8 @@ class LSTM(am.Model):
         # recurrent layers
         with tf.variable_scope('rnn') as scope:
 
-            # Reshape conv output to fit rnn input
+# Reshape conv output to fit rnn input                                  `                                                                                                                                                            GFXZ
+
             rnn_input = tf.reshape(conv1_drop, [self.settings.batch_size, -1,
                                                 feat_len * 64])
             # Permute into time major order for rnn
@@ -109,7 +110,7 @@ class LSTM(am.Model):
                 cells.append(drop_cell)
             multi_cell = tf.nn.rnn_cell.MultiRNNCell(cells)
 
-            seq_lens = tf.div(self.seq_lengths, 2)
+            seq_lens = self.seq_lengths
             rnn_outputs, _ = tf.nn.dynamic_rnn(multi_cell, rnn_input,
                                                    sequence_length=seq_lens, time_major=True,
                                                    scope='rnn', dtype=tf.float32)
