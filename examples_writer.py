@@ -31,7 +31,7 @@ Creates directories:
                     numpy array
 """
 
-ALPHABET = ' абвгдеёжзийклмнопрстуфхцчшщъыьэюя'
+ALPHABET = ' абвгдеёжзийклмнопрстуфхцчшщъыьэюя'  # Russian alphabet
 NUM_CLASSES = len(ALPHABET) + 1  # Additional class for blank
 CHAR_TO_IX = {ch: i for (i, ch) in enumerate(ALPHABET)}
 
@@ -123,23 +123,6 @@ def encode_sequence_example(sequence, label):
                                   feature_lists=sequence_feats)
 
     return ex.SerializeToString()
-
-
-def decode_sequence_example(seq_example):
-    context_features = {
-        "seq_length": tf.FixedLenFeature([], dtype=tf.int64),
-        "label": tf.VarLenFeature(dtype=tf.int64)
-    }
-    sequence_features = {
-        "features": tf.FixedLenSequenceFeature([None, ], dtype=tf.float32)
-    }
-
-    # Parse the example (returns a dictionary of tensors)
-    context_parsed, sequence_parsed = tf.parse_single_sequence_example(
-        serialized=seq_example,
-        context_features=context_features,
-        sequence_features=sequence_features
-    )
 
 
 def write_tf_record(writer, feature_vector, label):

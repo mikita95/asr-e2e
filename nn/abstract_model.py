@@ -35,10 +35,13 @@ class Model:
         tf.summary.scalar(act.op.name + '/sparsity', tf.nn.zero_fraction(act))
 
     @staticmethod
-    def _variable_on_cpu(name, shape, initializer, use_fp16):
+    def _variable_on_cpu(name, shape, initializer, use_fp16=False):
         with tf.device('/cpu'):
             dtype = tf.float16 if use_fp16 else tf.float32
-            var = tf.get_variable(name, shape, initializer=initializer, dtype=dtype)
+            var = tf.get_variable(name=name,
+                                  shape=shape,
+                                  initializer=initializer,
+                                  dtype=dtype)
         return var
 
     @staticmethod
@@ -56,13 +59,15 @@ class Model:
         """
         dtype = tf.float16 if use_fp16 else tf.float32
         var = Model._variable_on_cpu(
-            name,
-            shape,
-            tf.contrib.layers.variance_scaling_initializer(factor=2.0,
-                                                           mode='FAN_IN',
-                                                           uniform=False,
-                                                           seed=None,
-                                                           dtype=dtype), use_fp16)
+            name=name,
+            shape=shape,
+            initializer=tf.contrib.layers.variance_scaling_initializer(factor=2.0,
+                                                                       mode='FAN_IN',
+                                                                       uniform=False,
+                                                                       seed=None,
+                                                                       dtype=dtype),
+            use_fp16=use_fp16)
+
         if wd_value is not None:
             weight_decay = tf.cast(tf.scalar_mul(tf.nn.l2_loss(var), wd_value), tf.float32)
             tf.add_to_collection('losses', weight_decay)
