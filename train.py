@@ -7,6 +7,7 @@ import tensorflow as tf
 
 import examples_writer
 import nn.models_builder as mb
+from params.modes import Mode
 
 FLAGS = None
 
@@ -15,9 +16,10 @@ def get_loss(feats, labels, seq_lens):
     logits = mb.create_model(arch_type=FLAGS.model,
                              feature_input=feats,
                              seq_lengths=seq_lens,
-                             mode='train',
+                             batch_size=FLAGS.batch_size,
+                             mode=Mode.TRAIN,
                              num_classes=len(examples_writer.ALPHABET) + 1,
-                             settings=FLAGS)
+                             config_file=FLAGS.config_file)
 
     ctc_loss = tf.nn.ctc_loss(inputs=logits,
                               labels=labels,
@@ -201,6 +203,11 @@ if __name__ == '__main__':
 
     parser.add_argument('--model',
                         help='Name of neural network model',
+                        type=str)
+
+    parser.add_argument('--config_file',
+                        help='Configs of neural network model',
+                        default=None,
                         type=str)
 
     parser.add_argument('--batch_size',
