@@ -1,6 +1,6 @@
 from python_speech_features import mfcc
 
-from utils.feature_selector.abstract_feature_selector import FeatureSelector
+from utils.data.examples.features.selector import FeatureSelector
 
 
 class MFCCSelector(FeatureSelector):

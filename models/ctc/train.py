@@ -3,11 +3,11 @@ import argparse
 import time
 from datetime import datetime
 
+import nn.model as mb
 import tensorflow as tf
 
-import examples_writer
-import nn.models_builder as mb
-from params.modes import Mode
+from models.params.modes import Mode
+from utils.data.examples import writer
 
 FLAGS = None
 
@@ -18,7 +18,7 @@ def get_loss(feats, labels, seq_lens):
                              seq_lengths=seq_lens,
                              batch_size=FLAGS.batch_size,
                              mode=Mode.TRAIN,
-                             num_classes=len(examples_writer.ALPHABET) + 1,
+                             num_classes=len(writer.ALPHABET) + 1,
                              config_file=FLAGS.config_file)
 
     ctc_loss = tf.nn.ctc_loss(inputs=logits,
@@ -60,10 +60,10 @@ def set_learning_rate():
 
 
 def fetch_data():
-    import models.ctc_input
+    import models.ctc.input
     """ Fetch features, labels and sequence_lengths from a common queue."""
 
-    feats, labels, seq_lens = models.ctc_input.inputs(tfrecords_path=FLAGS.record_path,
+    feats, labels, seq_lens = models.ctc.input.inputs(tfrecords_path=FLAGS.record_path,
                                                       batch_size=FLAGS.batch_size,
                                                       shuffle=FLAGS.shuffle)
 

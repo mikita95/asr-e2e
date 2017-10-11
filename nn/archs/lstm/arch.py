@@ -1,4 +1,4 @@
-import nn.abstract_model as am
+import nn.model as am
 import tensorflow as tf
 
 

@@ -1,5 +1,23 @@
 from abc import ABC, abstractmethod
 import tensorflow as tf
+from enum import Enum
+
+from utils.data.examples.features.fbank import FBANKSelector
+from utils.data.examples.features.mfcc import MFCCSelector
+
+
+class Selector(Enum):
+    MFCC = 'mfcc'
+    FBANK = 'fbank'
+
+
+def get_feature_selector(selector_name='mfcc'):
+    if selector_name == Selector.MFCC:
+        return MFCCSelector()
+    elif selector_name == Selector.FBANK:
+        return FBANKSelector()
+    else:
+        raise TypeError('No such feature selector.')
 
 
 def load_audio_file(file_path):
@@ -18,7 +36,6 @@ def load_audio_file(file_path):
 
 
 class FeatureSelector(ABC):
-
     @abstractmethod
     def _get_feature_vector(self, audio, feature_settings, samples_per_second):
         pass
@@ -27,4 +44,3 @@ class FeatureSelector(ABC):
                            samples_per_second=16000, channel_count=1):
         audio = load_audio_file(file_path)
         return self._get_feature_vector(audio, feature_settings, samples_per_second)
-

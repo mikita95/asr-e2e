@@ -1,18 +1,14 @@
 import argparse
-import math
-import time
-from datetime import datetime
 
-import numpy as np
+import nn.model as mb
 import tensorflow as tf
 
-import examples_writer
-import models.ctc_input
-import nn.models_builder as mb
+import models.ctc.input
+from utils.data.examples import writer
 
 # Note this definition must match the ALPHABET chosen in
 # preprocess_Librispeech.py
-ALPHABET = examples_writer.ALPHABET
+ALPHABET = writer.ALPHABET
 IX_TO_CHAR = {i: ch for (i, ch) in enumerate(ALPHABET)}
 
 FLAGS = None
@@ -115,7 +111,7 @@ def evaluate():
         # Get feats and labels for deepSpeech.
         tot_batch_size = FLAGS.batch_size
 
-        feats, labels, seq_lens = models.ctc_input.inputs(
+        feats, labels, seq_lens = models.ctc.input.inputs(
             tfrecords_path=FLAGS.record_path,
             batch_size=tot_batch_size,
             shuffle=FLAGS.shuffle)
@@ -127,7 +123,7 @@ def evaluate():
                                  feature_input=feats,
                                  seq_lengths=seq_lens,
                                  mode='train',
-                                 num_classes=len(examples_writer.ALPHABET) + 1,
+                                 num_classes=len(writer.ALPHABET) + 1,
                                  settings=FLAGS)
 
         # Calculate predictions.

@@ -4,12 +4,10 @@ import re
 import sys
 
 import tensorflow as tf
-import utils.feature_selector.feature_selector_builder as fsb
+import utils.data.examples.features.selector as fsb
 
 FLAGS = None
 MODES = ['mfcc', 'fbank', 'raw']
-
-
 
 
 """

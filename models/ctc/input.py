@@ -1,6 +1,4 @@
 # coding=utf-8
-import os.path
-import glob
 import tensorflow as tf
 
 

@@ -1,4 +1,4 @@
-import utils.data.labels.abstract_labels_handler as alh
+import utils.data.examples.labels.handler as alh
 
 
 class CTCLabelsHandler(alh.LabelsHandler):
