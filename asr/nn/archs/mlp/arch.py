@@ -1,4 +1,4 @@
-from src.main import nn as am
+import nn as am
 
 
 class MLP(am.Model):

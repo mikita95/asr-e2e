@@ -2,11 +2,11 @@ from abc import ABCMeta, abstractmethod
 
 import tensorflow as tf
 
-from src.main.models.params.modes import Mode
+from models import Mode
 
 
 def create_model(arch_type, feature_input, seq_lengths, mode, num_classes, batch_size=None, config_file=None):
-    from src.main.nn.archs import LSTM
+    from nn import LSTM
     if arch_type == 'lstm':
         return LSTM(feature_input=feature_input,
                     seq_lengths=seq_lengths,

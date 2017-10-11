@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-from src.main import nn as am
+import nn as am
 
 
 class LSTM(am.Model):

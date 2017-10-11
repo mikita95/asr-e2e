@@ -5,7 +5,7 @@ import sys
 
 import tensorflow as tf
 
-import src.main.utils.data.examples.features.selector as fsb
+import utils.data.examples.features.selector as fsb
 
 FLAGS = None
 MODES = ['mfcc', 'fbank', 'raw']

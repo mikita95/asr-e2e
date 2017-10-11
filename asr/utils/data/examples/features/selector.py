@@ -2,9 +2,9 @@ from abc import ABC, abstractmethod
 from enum import Enum
 
 import tensorflow as tf
-from utils.data.examples.features.mfcc import MFCCSelector
 
-from src.main.utils.data.examples.features.fbank import FBANKSelector
+from utils.data.examples.features.fbank import FBANKSelector
+from utils.data.examples.features.mfcc import MFCCSelector
 
 
 class Selector(Enum):

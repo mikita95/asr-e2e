@@ -2,8 +2,8 @@ import argparse
 
 import tensorflow as tf
 
-from src.main import nn as mb
-from src.main.utils import writer
+import nn as mb
+from utils import writer
 
 # Note this definition must match the ALPHABET chosen in
 # preprocess_Librispeech.py
@@ -211,7 +211,7 @@ if __name__ == '__main__':
                         default='../models/librispeech/train',
                         help='Directory where to read model checkpoints.')
     parser.add_argument('--eval_data', type=str, default='val',
-                        help="Either 'test' or 'val' or 'train' ")
+                        help="Either 'tests' or 'val' or 'train' ")
 
     parser.add_argument('--eval_interval_secs', type=int, default=60 * 5,
                         help='How often to run the eval')

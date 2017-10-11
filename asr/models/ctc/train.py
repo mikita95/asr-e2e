@@ -5,9 +5,9 @@ from datetime import datetime
 
 import tensorflow as tf
 
-from src.main import nn as mb
-from src.main.models.params.modes import Mode
-from src.main.utils import writer
+import nn as mb
+from models import Mode
+from utils import writer
 
 FLAGS = None
 
@@ -187,7 +187,7 @@ def train():
 if __name__ == '__main__':
     from tensorflow.python.client import device_lib
 
-    parser = argparse.ArgumentParser(prog='trainer', description='Script to train and test nn')
+    parser = argparse.ArgumentParser(prog='trainer', description='Script to train and tests nn')
 
     num_gpus = len([x for x in device_lib.list_local_devices()
                     if x.device_type == "GPU"])
