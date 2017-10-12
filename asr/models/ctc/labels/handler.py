@@ -11,7 +11,7 @@ class CTCLabelsHandler(alh.LabelsHandler):
                 replace("'", '').replace('!', '').replace('-', '')
 
         original = _normalize_label_text(label_text)
-        print(original)
+
         label = np.asarray([self.alphabet[c] for c in original if c in self.alphabet])
 
         return label

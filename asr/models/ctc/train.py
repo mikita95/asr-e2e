@@ -5,9 +5,8 @@ from datetime import datetime
 
 import tensorflow as tf
 
-import nn as mb
-from models import Mode
-from utils import writer
+import asr.nn.model as mb
+from asr.models.params.modes import Mode
 
 FLAGS = None
 
@@ -60,9 +59,10 @@ def set_learning_rate():
 
 
 def fetch_data():
+    import asr.models.ctc.input
     """ Fetch features, labels and sequence_lengths from a common queue."""
 
-    feats, labels, seq_lens = src.models.ctc.input.inputs(tfrecords_path=FLAGS.record_path,
+    feats, labels, seq_lens = asr.models.ctc.input.inputs(tfrecords_path=FLAGS.record_path,
                                                           batch_size=FLAGS.batch_size,
                                                           shuffle=FLAGS.shuffle)
 

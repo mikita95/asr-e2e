@@ -61,18 +61,3 @@ def inputs(tfrecords_path, batch_size, shuffle=False):
 
     # Generate a batch of images and labels by building up a queue of examples.
     return _generate_feats_and_label_batch(filename_queue, batch_size)
-
-
-if __name__ == '__main__':
-    with tf.Graph().as_default():
-        feats, labels, seq_len = inputs("C:\\Users\\Nikita_Markovnikov\\Downloads\\train_records.tf", 8)
-        print("hello")
-        sess = tf.Session(config=tf.ConfigProto(
-            allow_soft_placement=True,
-            log_device_placement=False))
-        tf.train.start_queue_runners(sess)
-        with sess.as_default():
-            print(feats.eval().shape)
-            print(labels.eval().dense_shape)
-            print(seq_len.eval())
-
