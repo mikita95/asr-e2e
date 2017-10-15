@@ -1,15 +1,17 @@
 import tensorflow as tf
 
-import nn as am
+import asr.nn.model as am
 
 
 class LSTM(am.Model):
     def build_graph(self):
         with tf.variable_scope('rnn') as scope:
             cells = []
-            for i in range(self.configs['PARAMS']['num_layers']):
-                cell = tf.nn.rnn_cell.LSTMCell(self.configs['PARAMS']['num_hidden'])
-                drop_cell = tf.nn.rnn_cell.DropoutWrapper(cell, self.configs['PARAMS']['output_keep_prob'])
+            num_layers = int(self.configs['PARAMS']['num_layers'])
+            num_hidden = int(self.configs['PARAMS']['num_hidden'])
+            for i in range(num_layers):
+                cell = tf.nn.rnn_cell.LSTMCell(num_hidden)
+                drop_cell = tf.nn.rnn_cell.DropoutWrapper(cell, float(self.configs['PARAMS']['output_keep_prob']))
                 cells.append(drop_cell)
 
             multi_cell = tf.nn.rnn_cell.MultiRNNCell(cells)
@@ -23,11 +25,11 @@ class LSTM(am.Model):
             self._activation_summary(rnn_outputs)
 
         with tf.variable_scope('linear') as scope:
-            W = tf.Variable(tf.truncated_normal([self.configs['PARAMS']['num_hidden'], self.num_classes],
+            W = tf.Variable(tf.truncated_normal([num_hidden, self.num_classes],
                                                 stddev=0.1))
             b = tf.Variable(tf.constant(0., shape=[self.num_classes]))
 
-            outputs = tf.reshape(rnn_outputs, [-1, self.configs['PARAMS']['num_hidden']])
+            outputs = tf.reshape(rnn_outputs, [-1, num_hidden])
 
             # Doing the affine projection
             logits = tf.matmul(outputs, W) + b

@@ -3,8 +3,8 @@ from enum import Enum
 
 import tensorflow as tf
 
-from utils.data.examples.features.fbank import FBANKSelector
-from utils.data.examples.features.mfcc import MFCCSelector
+from asr.utils.data.examples.features.fbank import FBANKSelector
+from asr.utils.data.examples.features.mfcc import MFCCSelector
 
 
 class Selector(Enum):
