@@ -2,22 +2,20 @@ import argparse
 
 import tensorflow as tf
 
-import nn as mb
-from utils import writer
-
-# Note this definition must match the ALPHABET chosen in
-# preprocess_Librispeech.py
-ALPHABET = writer.ALPHABET
-IX_TO_CHAR = {i: ch for (i, ch) in enumerate(ALPHABET)}
+import asr.nn.model as mb
+from asr.models.params.modes import Mode
 
 FLAGS = None
 
 
 def sparse_to_labels(sparse_matrix):
+    import asr.models.ctc.labels.handler as hn
+    handler = hn.CTCLabelsHandler(
+        alphabet_file=FLAGS['alphabet_config_file'])
     """ Convert index based transcripts to strings"""
     results = [''] * sparse_matrix.dense_shape[0]
     for i, val in enumerate(sparse_matrix.values.tolist()):
-        results[sparse_matrix.indices[i, 0]] += IX_TO_CHAR[val]
+        results[sparse_matrix.indices[i, 0]] += handler.decode([val])
     return results
 
 
@@ -25,7 +23,7 @@ def initialize_from_checkpoint(sess, saver):
     """ Initialize variables on the graph"""
 
     # Initialise variables from a checkpoint file, if provided.
-    ckpt = tf.train.get_checkpoint_state(FLAGS.checkpoint_dir)
+    ckpt = tf.train.get_checkpoint_state(FLAGS['checkpoint'])
     if ckpt and ckpt.model_checkpoint_path:
         # Restores from checkpoint
         saver.restore(sess, ckpt.model_checkpoint_path)
@@ -42,7 +40,7 @@ def initialize_from_checkpoint(sess, saver):
 
 def inference(predictions_op, true_labels_op, sess, output_file):
     """ Perform inference per batch on pre-trained model.
-    This function performs inference and computes the CER per utterance.
+    This function performs inference and computes the CER per ut+-terance.
     Args:
         predictions_op: Prediction op
         true_labels_op: True Labels op
@@ -65,8 +63,7 @@ def inference(predictions_op, true_labels_op, sess, output_file):
     return char_err_rate
 
 
-def eval_once(saver, summary_writer, predictions_op, summary_op,
-              true_labels_op):
+def eval_once(saver, predictions_op, true_labels_op):
     """Run Eval once.
     Args:
       saver: Saver.
@@ -89,12 +86,8 @@ def eval_once(saver, summary_writer, predictions_op, summary_op,
                                                             start=True))
             # Only using a subset of the training data
 
-            inference(predictions_op, true_labels_op, sess, FLAGS.output_file)
+            inference(predictions_op, true_labels_op, sess, FLAGS['output_file'])
 
-            # Add summary ops
-            summary = tf.Summary()
-            summary.ParseFromString(sess.run(summary_op))
-            summary_writer.add_summary(summary, global_step)
         except Exception as exc:  # pylint: disable=broad-except
             coord.request_stop(exc)
 
@@ -105,55 +98,42 @@ def eval_once(saver, summary_writer, predictions_op, summary_op,
 
 def evaluate():
     """ Evaluate deepSpeech modelfor a number of steps."""
+    import asr.models.ctc.input
+    import asr.models.ctc.labels.handler as hn
 
     with tf.Graph().as_default() as graph:
         # Get feats and labels for deepSpeech.
-        tot_batch_size = FLAGS.batch_size
+        tot_batch_size = int(FLAGS['batch_size'])
 
-        feats, labels, seq_lens = src.models.ctc.input.inputs(
-            tfrecords_path=FLAGS.record_path,
+        feats, labels, seq_lens = asr.models.ctc.input.inputs(
+            tfrecords_path=FLAGS['test_record_path'],
             batch_size=tot_batch_size,
-            shuffle=FLAGS.shuffle)
+            shuffle=bool(FLAGS['shuffle']))
 
         # Build ops that computes the logits predictions from the
         # inference model.
-        FLAGS.keep_prob = 1.0  # Disable dropout during testing.
-        logits = mb.create_model(arch_type=FLAGS.model,
+
+        logits = mb.create_model(arch_type=FLAGS['model'],
                                  feature_input=feats,
                                  seq_lengths=seq_lens,
-                                 mode='train',
-                                 num_classes=len(writer.ALPHABET) + 1,
-                                 settings=FLAGS)
+                                 batch_size=int(FLAGS['batch_size']),
+                                 mode=Mode.TRAIN,
+                                 num_classes=hn.CTCLabelsHandler(
+                                     alphabet_file=FLAGS['alphabet_config_file']).get_alphabet_size() + 1,
+                                 config_file=FLAGS['model_config_file'])
 
         # Calculate predictions.
         output_log_prob = tf.nn.log_softmax(logits)
         decoder = tf.nn.ctc_beam_search_decoder
-        strided_seq_lens = tf.div(seq_lens, FLAGS.temporal_stride)
-        predictions = decoder(output_log_prob, strided_seq_lens)
 
-        print(predictions)
+        predictions = decoder(output_log_prob, seq_lens)
 
-        # Restore the moving average version of the learned variables for eval.
-        variable_averages = tf.train.ExponentialMovingAverage(
-            FLAGS.moving_avg_decay)
+        saver = tf.train.Saver()
 
-        variables_to_restore = variable_averages.variables_to_restore()
-        saver = tf.train.Saver(variables_to_restore)
-
-        # Build the summary operation based on the TF collection of Summaries.
-        summary_op = tf.summary.merge_all()
-        summary_writer = tf.summary.FileWriter(FLAGS.eval_dir, graph)
-
-        eval_once(saver, summary_writer, predictions, summary_op, labels)
+        eval_once(saver, predictions, labels)
 
 
 def main():
-    """
-    Create eval directory and perform inference on checkpointed model.
-    """
-    if tf.gfile.Exists(FLAGS.eval_dir):
-        tf.gfile.DeleteRecursively(FLAGS.eval_dir)
-    tf.gfile.MakeDirs(FLAGS.eval_dir)
     evaluate()
 
 
@@ -161,107 +141,15 @@ if __name__ == '__main__':
     """ Parses command line arguments."""
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--record_path',
+    parser.add_argument('--test_config',
                         type=str,
-                        help='Path to data dir')
+                        help='Path to test config file')
 
-    parser.add_argument('--val_path',
-                        type=str,
-                        help='Path to validation data dir')
+    ARGS, unparsed = parser.parse_known_args()
+    import configparser
 
-    parser.add_argument('--model',
-                        help='Name of neural network model',
-                        type=str)
+    config = configparser.ConfigParser()
+    config.read(ARGS.test_config, encoding='utf8')
+    FLAGS = dict(config.items('CONFIGS'))
 
-    parser.add_argument('--batch_size',
-                        type=int,
-                        default=8,
-                        help='How many items to train with at once')
-
-    parser.add_argument('--max_examples_per_epoch',
-                        type=int,
-                        default=1000,
-                        help='How many examples per epoch to train with')
-
-    parser.add_argument('--summaries_dir',
-                        type=str,
-                        default='/tmp/retrain_logs',
-                        help='Where to save summary logs for TensorBoard.')
-
-    parser.add_argument('--train_dir',
-                        type=str,
-                        default='/tmp/speech_commands_train',
-                        help='Directory to write event logs and checkpoint.')
-
-    parser.add_argument('--save_step_interval',
-                        type=int,
-                        default=100,
-                        help='Save model checkpoint every save_steps.')
-
-    parser.add_argument('--start_checkpoint',
-                        type=str,
-                        default='',
-                        help='If specified, restore this pretrained model before any training.')
-
-    parser.add_argument('--output_file', type=str)
-    parser.add_argument('--eval_dir', type=str,
-                        default='../models/librispeech/eval',
-                        help='Directory to write event logs')
-    parser.add_argument('--checkpoint_dir', type=str,
-                        default='../models/librispeech/train',
-                        help='Directory where to read model checkpoints.')
-    parser.add_argument('--eval_data', type=str, default='val',
-                        help="Either 'tests' or 'val' or 'train' ")
-
-    parser.add_argument('--eval_interval_secs', type=int, default=60 * 5,
-                        help='How often to run the eval')
-    parser.add_argument('--data_dir', type=str,
-                        default='../data/librispeech/processed/',
-                        help='Path to the deepSpeech data directory')
-    parser.add_argument('--run_once', type=bool, default=False,
-                        help='Whether to run eval only once')
-    parser.add_argument('--num_batches_per_epoch', type=int, default=100)
-
-    parser.add_argument('--max_steps', type=int, default=20000,
-                        help='Number of batches to run')
-    parser.add_argument('--num_gpus', type=int, default=1,
-                        help='How many GPUs to use')
-    parser.add_argument('--log_device_placement', type=bool, default=False,
-                        help='Whether to log device placement')
-
-    parser.add_argument('--temporal_stride', type=int, default=2,
-                        help='Stride along time')
-
-    feature_parser = parser.add_mutually_exclusive_group(required=False)
-    feature_parser.add_argument('--shuffle', dest='shuffle',
-                                action='store_true')
-    feature_parser.add_argument('--no-shuffle', dest='shuffle',
-                                action='store_false')
-    parser.set_defaults(shuffle=True)
-
-    feature_parser = parser.add_mutually_exclusive_group(required=False)
-    feature_parser.add_argument('--use_fp16', dest='use_fp16',
-                                action='store_true')
-    feature_parser.add_argument('--use_fp32', dest='use_fp16',
-                                action='store_false')
-    parser.set_defaults(use_fp16=False)
-
-    parser.add_argument('--keep_prob', type=float, default=0.5,
-                        help='Keep probability for dropout')
-
-    parser.add_argument('--checkpoint', type=str, default=None,
-                        help='Continue training from checkpoint file')
-
-    parser.add_argument('--initial_lr', type=float, default=0.00001,
-                        help='Initial learning rate for training')
-
-    parser.add_argument('--moving_avg_decay', type=float, default=0.9999,
-                        help='Decay to use for the moving average of weights')
-    parser.add_argument('--num_epochs_per_decay', type=int, default=5,
-                        help='Epochs after which learning rate decays')
-    parser.add_argument('--lr_decay_factor', type=float, default=0.9,
-                        help='Learning rate decay factor')
-    args = parser.parse_args()
-
-    FLAGS, unparsed = parser.parse_known_args()
     main()

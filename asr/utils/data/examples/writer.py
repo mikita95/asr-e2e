@@ -96,7 +96,7 @@ class Writer(object):
 
         seq_length_feature = tf.train.Feature(int64_list=tf.train.Int64List(value=[seq_length]))
 
-        label_bytes_list = self.labels_handler.handle(label)
+        label_bytes_list = self.labels_handler.encode(label)
 
         label_feature = tf.train.Feature(int64_list=tf.train.Int64List(value=label_bytes_list))
 

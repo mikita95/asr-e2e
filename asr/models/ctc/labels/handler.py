@@ -16,5 +16,9 @@ class CTCLabelsHandler(alh.LabelsHandler):
 
         return label
 
-    def handle(self, label):
+    def encode(self, label):
         return self._convert_label_to_ctc_format(label)
+
+    def decode(self, sequence):
+        inv_alphabet = {v: k for k, v in self.alphabet.items()}
+        return ''.join([inv_alphabet[str(c)] for c in sequence])

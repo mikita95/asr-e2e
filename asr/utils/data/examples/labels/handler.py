@@ -26,5 +26,9 @@ class LabelsHandler:
         return len(self.alphabet)
 
     @abstractmethod
-    def handle(self, label):
+    def encode(self, label):
+        pass
+
+    @abstractmethod
+    def decode(self, sequence):
         pass
