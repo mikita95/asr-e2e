@@ -12,7 +12,7 @@ FLAGS = None
 
 
 def get_loss(feats, labels, seq_lens):
-    import asr.models.ctc.labels.handler as hn
+    import asr.models.ctc.data.labels.handler as hn
 
     logits = mb.create_model(arch_type=FLAGS['model'],
                              feature_input=feats,

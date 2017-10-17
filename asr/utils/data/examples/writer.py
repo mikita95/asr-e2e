@@ -1,39 +1,14 @@
-import argparse
 import os
 import re
-import sys
 
 import tensorflow as tf
 
 import asr.utils.data.examples.features.selector as fsb
 import asr.utils.data.examples.labels.handler as lh
 
-FLAGS = None
-MODES = ['mfcc', 'fbank', 'raw']
-
-
-"""
-Expected data directory structure:
-    data >
-        number >
-            %format [wav, mp3] >
-                [file_name.%format]*
-            etc >
-                txt.done.data: [( file_name "phrase" )\n]*
-Creates directories:
-    data >
-        number >
-            %format >
-            etc >
-    +       %mode [mfcc, fbank, raw] >
-                [file_name.csv]*:
-                    header [some metadata]
-                    numpy array
-"""
-
 
 class Writer(object):
-    def __init__(self, features_selector: fsb.FeatureSelector, labels_handler: lh.LabelsHandler):
+    def __init__(self, config_file, features_selector: fsb.FeatureSelector, labels_handler: lh.LabelsHandler):
         self.features_selector = features_selector
         self.labels_handler = labels_handler
 
@@ -48,17 +23,37 @@ class Writer(object):
         """
         result = {}
         with open(file_path, encoding="utf8") as f:
+            tf.logging.debug("Parsing labels file " + file_path)
+
             content = f.readlines()
             for x in content:
                 result[x.split(" ")[1]] = re.findall('"([^"]*)"', x)[0]
+
+            tf.logging.debug("Found " + str(len(result)) + " labels in " + file_path)
+
             return result
 
     def data_dir_handle(self, data_dir, audio_format='wav'):
+        """
+        Expected data directory structure:
+            data >
+                number >
+                    %format [wav, mp3] >
+                        [file_name.%format]*
+                    etc >
+                        txt.done.data: [( file_name "phrase" )\n]*
+        Args:
+            data_dir: data root
+            audio_format: name of a directory corresponding audio format
+
+        Returns: list of dicts {'audio_file_path', 'label'}
+
+        """
         examples = []
 
         for data_subset_dir_name in os.listdir(data_dir):  # data/001
             subset_format_dir_path = os.path.join(data_dir, data_subset_dir_name, audio_format)  # data/001/wav
-            tf.logging.info("Going to dir " + subset_format_dir_path)
+            tf.logging.debug("Going to dir " + subset_format_dir_path)
 
             label_file_path = os.path.join(data_dir, data_subset_dir_name, 'etc', 'txt.done.data')
             labels_of_current_subset = self._parse_labels_file(label_file_path)
@@ -72,9 +67,6 @@ class Writer(object):
                                  'label': labels_of_current_subset[example_name]})
 
         return examples
-
-    def _bytes_feature(self, value):
-        return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
 
     def encode_sequence_example(self, sequence, label):
         """
@@ -112,84 +104,21 @@ class Writer(object):
         ex = self.encode_sequence_example(feature_vector, label)
         writer.write(ex)
 
-    def write(self, data_dir, record_file_path, feature_settings):
+    def write(self, data_dir, record_file_path, feature_settings, logging_freq=50):
         writer = tf.python_io.TFRecordWriter(record_file_path)
         unparsed_examples = self.data_dir_handle(data_dir)
-        current = 1
-        for unparsed_ex in unparsed_examples:
+
+        for n, unparsed_ex in enumerate(unparsed_examples):
             #  get numpy array [seq_length x num_ceps]
-            feature_vector = \
-                self.features_selector.get_feature_vector(file_path=unparsed_ex['audio_file_path'], feature_settings=feature_settings)
+            feature_vector = self.features_selector.get_feature_vector(file_path=unparsed_ex['audio_file_path'],
+                                                                       feature_settings=feature_settings)
             #  simply string representation of the label
             label = unparsed_ex['label']
             self.write_tf_record(writer=writer,
                                  feature_vector=feature_vector,
                                  label=label)
-            current += 1
-            if current % 50 == 0:
-                tf.logging.info("Processed: %d / %d" % (current, len(unparsed_examples)))
+
+            if n % logging_freq == 0:
+                tf.logging.info("Processed: %d / %d" % (n, len(unparsed_examples)))
 
         writer.close()
-
-
-def main(_):
-    import asr.models.ctc.labels.handler
-    tf.logging.set_verbosity(tf.logging.INFO)
-
-    writer = Writer(features_selector=fsb.get_feature_selector(selector_name=FLAGS.mode),
-                    labels_handler=asr.models.ctc.labels.handler.CTCLabelsHandler)
-
-    writer.write(data_dir=FLAGS.data_dir,
-                 record_file_path=FLAGS.save_dir,
-                 feature_settings={})
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(prog='data_process', description='Script to process data')
-
-    parser.add_argument("--data_dir", help="Directory of dataset", type=str)
-    parser.add_argument("--save_dir", help="Directory where preprocessed arrays are to be saved", type=str)
-
-    parser.add_argument("--rewrite", help="Rewrite csv output file if exists", type=bool, default=False)
-
-    parser.add_argument("--mode",
-                        help="Mode",
-                        choices=MODES,
-                        type=str,
-                        default='mfcc')
-
-    parser.add_argument("--labels_format",
-                        help='Labels format',
-                        choices=['ctc'],
-                        type=str,
-                        default='ctc')
-
-    parser.add_argument("--format",
-                        help="Format of files",
-                        choices=['wav', 'mp3'],
-                        type=str,
-                        default='wav')
-
-    parser.add_argument("--rate",
-                        help="Sample rate of the audio files",
-                        type=int,
-                        default=16000)
-
-    parser.add_argument("--channels",
-                        help="Number of channels of the audio files",
-                        type=int,
-                        default=1)
-
-    parser.add_argument("--winlen", type=float, default=0.025)
-    parser.add_argument("--winstep", type=float, default=0.01)
-    parser.add_argument("--numcep", type=int, default=13)
-    parser.add_argument("--nfilt", type=int, default=26)
-    parser.add_argument("--nfft", type=int, default=512)
-    parser.add_argument("--lowfreq", type=int, default=0)
-    parser.add_argument("--highfreq", type=int, default=None)
-    parser.add_argument("--ceplifter", type=int, default=22)
-    parser.add_argument("--preemph", type=float, default=0.97)
-    parser.add_argument("--appendEnergy", type=bool, default=True)
-
-    FLAGS, unparsed = parser.parse_known_args()
-    tf.app.run(main=main, argv=[sys.argv[0]] + unparsed)
