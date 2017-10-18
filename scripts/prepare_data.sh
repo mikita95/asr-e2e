@@ -1,2 +1,1 @@
-/home/nikita/anaconda3/bin/python examples_writer.py --data_dir=/home/nikita/Development/validation/ --save_dir=/home/nikita/Development/test.tfrecord
-
+/home/nikita/anaconda3/bin/python /home/nikita/Development/asr-e2e/asr/utils/data/examples/writer.py --writer_config=/home/nikita/Development/asr-e2e/asr/resources/ctc/configs/writer_config.ini --record_path=/home/nikita/Development/asr-e2e/asr/resources/ctc/data/mfcc_18_ctc/train.tfrecord --data_dir=/home/nikita/Development/data

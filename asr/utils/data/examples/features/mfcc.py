@@ -4,7 +4,6 @@ from asr.utils.data.examples.features.selector import FeatureSelector
 
 
 class MFCCSelector(FeatureSelector):
-
     def _get_feature_vector(self, audio, feature_settings, samples_per_second):
         import numpy as np
         audio_data = audio - np.mean(audio)

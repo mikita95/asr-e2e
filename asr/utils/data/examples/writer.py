@@ -1,4 +1,5 @@
 import os
+os.path.abspath('...')
 import re
 
 import tensorflow as tf
@@ -8,9 +9,24 @@ import asr.utils.data.examples.labels.handler as lh
 
 
 class Writer(object):
-    def __init__(self, config_file, features_selector: fsb.FeatureSelector, labels_handler: lh.LabelsHandler):
+    def __init__(self, config_file=None, features_selector: fsb.FeatureSelector=None, labels_handler: lh.LabelsHandler=None):
+
+        if not (config_file is None):
+            import configparser
+            config = configparser.ConfigParser()
+            config.read(config_file, encoding='utf8')
+
+            self.features_settings = dict(config.items('FEATURES'))
+            self.labels_settings = dict(config.items('LABELS'))
+
         self.features_selector = features_selector
         self.labels_handler = labels_handler
+
+        if features_selector is None:
+            self.features_selector = fsb.get_feature_selector(self.features_selector['features_selector'])
+        if labels_handler is None:
+            self.labels_handler = lh.get_labels_handler(alphabet_file=self.labels_settings['alphabet_config'],
+                                                        handler_name=self.labels_settings['labels_handler'])
 
     def _parse_labels_file(self, file_path):
         """
@@ -104,14 +120,14 @@ class Writer(object):
         ex = self.encode_sequence_example(feature_vector, label)
         writer.write(ex)
 
-    def write(self, data_dir, record_file_path, feature_settings, logging_freq=50):
+    def write(self, data_dir, record_file_path, logging_freq=50):
         writer = tf.python_io.TFRecordWriter(record_file_path)
         unparsed_examples = self.data_dir_handle(data_dir)
 
         for n, unparsed_ex in enumerate(unparsed_examples):
             #  get numpy array [seq_length x num_ceps]
             feature_vector = self.features_selector.get_feature_vector(file_path=unparsed_ex['audio_file_path'],
-                                                                       feature_settings=feature_settings)
+                                                                       feature_settings=self.features_settings)
             #  simply string representation of the label
             label = unparsed_ex['label']
             self.write_tf_record(writer=writer,
@@ -122,3 +138,24 @@ class Writer(object):
                 tf.logging.info("Processed: %d / %d" % (n, len(unparsed_examples)))
 
         writer.close()
+
+
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser(prog='writer', description='Script to write data')
+
+    parser.add_argument('--writer_config',
+                        type=str,
+                        help='Path to writer config file')
+
+    parser.add_argument('--data_dir',
+                        type=str)
+
+    parser.add_argument('--record_path',
+                        type=str)
+
+    ARGS, unparsed = parser.parse_known_args()
+
+    writer = Writer(config_file=ARGS.writer_config)
+    writer.write(data_dir=ARGS.data_dir,
+                 record_file_path=ARGS.record_path)

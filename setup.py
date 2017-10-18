@@ -10,5 +10,5 @@ setup(
     license='',
     author='Nikita_Markovnikov',
     author_email='',
-    description=''
+    description='', install_requires=['tensorflow', 'python_speech_features', 'numpy']
 )
