@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
 from enum import Enum
+import tensorflow as tf
+import numpy as np
 
 
 class Handler(Enum):
@@ -7,6 +9,17 @@ class Handler(Enum):
 
 
 class LabelsHandler(ABC):
+
+    @abstractmethod
+    def encode(self, label: object) -> tf.train.Feature:
+        pass
+
+    @abstractmethod
+    def decode(self, label):
+        pass
+
+
+class SentencesLabelsHandler(LabelsHandler):
 
     def __init__(self, alphabet_file):
         def _parse_alphabet_file(alphabet_file_path):
@@ -29,20 +42,18 @@ class LabelsHandler(ABC):
         return len(self.alphabet)
 
     @abstractmethod
-    def encode(self, label):
+    def encode(self, label: object) -> tf.train.Feature:
         pass
 
     @abstractmethod
-    def decode(self, sequence):
+    def decode(self, label):
         pass
 
 
-class IndexerLabelsHandler(LabelsHandler):
+class IndexerSentencesLabelsHandler(SentencesLabelsHandler):
 
-    def _convert_label_to_ctc_format(self, label_text):
-        import numpy as np
-
-        def _normalize_label_text(text):
+    def _convert_label_to_index_format(self, label_text: str) -> np.ndarray:
+        def _normalize_label_text(text: str) -> str:
             return text.lower().replace('.', '').replace('?', '').replace(',', ''). \
                 replace("'", '').replace('!', '').replace('-', '')
 
@@ -51,8 +62,10 @@ class IndexerLabelsHandler(LabelsHandler):
         label = np.asarray([int(self.alphabet[c]) for c in original if c in self.alphabet])
         return label
 
-    def encode(self, label):
-        return self._convert_label_to_ctc_format(label)
+    def encode(self, label: str) -> tf.train.Feature:
+        converted_label = self._convert_label_to_index_format(label)
+        label_feature = tf.train.Feature(int64_list=tf.train.Int64List(value=converted_label))
+        return label_feature
 
     def decode(self, sequence):
         inv_alphabet = {v: k for k, v in self.alphabet.items()}
@@ -61,6 +74,6 @@ class IndexerLabelsHandler(LabelsHandler):
 
 def get_labels_handler(alphabet_file, handler_name='indexer'):
     if handler_name == Handler.INDEXER.value:
-        return IndexerLabelsHandler(alphabet_file=alphabet_file)
+        return IndexerSentencesLabelsHandler(alphabet_file=alphabet_file)
     else:
         raise TypeError('No such labels handler.')

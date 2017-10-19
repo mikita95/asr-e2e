@@ -21,7 +21,7 @@ def get_loss(feats, labels, seq_lens, mode=Mode.TRAIN):
                              seq_lengths=seq_lens,
                              batch_size=int(FLAGS['batch_size']),
                              mode=mode,
-                             num_classes=hn.IndexerLabelsHandler(
+                             num_classes=hn.IndexerSentencesLabelsHandler(
                                  alphabet_file=FLAGS['alphabet_config_file']).get_alphabet_size() + 1,
                              config_file=FLAGS['model_config_file'])
 
