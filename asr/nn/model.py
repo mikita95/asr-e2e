@@ -23,6 +23,7 @@ def create_model(arch_type, feature_input, seq_lengths, mode, num_classes, batch
                     batch_size=batch_size,
                     config_file='configs/mlp.ini' if config_file is None else config_file).build_graph()
 
+
 def activation_function(name):
     if name == 'relu':
         return tf.nn.relu
