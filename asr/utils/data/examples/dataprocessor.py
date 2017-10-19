@@ -7,7 +7,7 @@ import asr.utils.data.examples.features.selector as fsb
 import asr.utils.data.examples.labels.handler as lh
 
 
-class Writer(object):
+class DataProcessor(object):
     def __init__(self, config_file=None, features_selector: fsb.FeatureSelector=None, labels_handler: lh.LabelsHandler=None):
 
         if not (config_file is None):
@@ -115,12 +115,8 @@ class Writer(object):
 
         return ex.SerializeToString()
 
-    def write_tf_record(self, writer, feature_vector, label):
-        ex = self.encode_sequence_example(feature_vector, label)
-        writer.write(ex)
-
     def write(self, data_dir, record_file_path, logging_freq=50):
-        writer = tf.python_io.TFRecordWriter(record_file_path)
+        tf_writer = tf.python_io.TFRecordWriter(record_file_path)
         unparsed_examples = self.data_dir_handle(data_dir)
 
         for n, unparsed_ex in enumerate(unparsed_examples):
@@ -129,14 +125,14 @@ class Writer(object):
                                                                        feature_settings=self.features_settings)
             #  simply string representation of the label
             label = unparsed_ex['label']
-            self.write_tf_record(writer=writer,
-                                 feature_vector=feature_vector,
-                                 label=label)
+
+            ex = self.encode_sequence_example(feature_vector, label)
+            tf_writer.write(ex)
 
             if n % logging_freq == 0:
                 tf.logging.info("Processed: %d / %d" % (n, len(unparsed_examples)))
 
-        writer.close()
+        tf_writer.close()
 
 
 if __name__ == '__main__':
@@ -157,6 +153,6 @@ if __name__ == '__main__':
 
     tf.logging.set_verbosity(tf.logging.INFO)
 
-    writer = Writer(config_file=ARGS.writer_config)
+    writer = DataProcessor(config_file=ARGS.writer_config)
     writer.write(data_dir=ARGS.data_dir,
                  record_file_path=ARGS.record_path)

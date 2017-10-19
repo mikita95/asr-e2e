@@ -2,7 +2,7 @@
 import tensorflow as tf
 
 
-def _generate_feats_and_label_batch(filename_queue, batch_size):
+def _generate_feats_and_label_batch(data_config, filename_queue, batch_size):
     """Construct a queued batch of spectral features and transcriptions.
     Args:
       filename_queue: queue of filenames to read data from.
@@ -14,12 +14,21 @@ def _generate_feats_and_label_batch(filename_queue, batch_size):
     """
 
     # Define how to parse the example
+    import configparser
+    config = configparser.ConfigParser()
+    config.read(data_config, encoding='utf8')
+
+    features_settings = dict(config.items('FEATURES'))
+    labels_settings = dict(config.items('LABELS'))
+
     reader = tf.TFRecordReader()
     _, serialized_example = reader.read(filename_queue)
+
     context_features = {
         "seq_length": tf.FixedLenFeature([], dtype=tf.int64),
         "label": tf.VarLenFeature(dtype=tf.int64)
     }
+
     sequence_features = {
         "features": tf.FixedLenSequenceFeature([13, ], dtype=tf.float32)
     }
@@ -44,7 +53,7 @@ def _generate_feats_and_label_batch(filename_queue, batch_size):
     return feats, tf.cast(labels, tf.int32), seq_len
 
 
-def inputs(tfrecords_path, batch_size, shuffle=False):
+def inputs(data_config, tfrecords_path, batch_size, shuffle=False):
     """Construct input for fordspeech evaluation using the Reader ops.
     Args:
       eval_data: bool, indicating if one should use the train or eval data set.
@@ -60,4 +69,6 @@ def inputs(tfrecords_path, batch_size, shuffle=False):
     filename_queue = tf.train.string_input_producer([tfrecords_path], shuffle=shuffle)
 
     # Generate a batch of images and labels by building up a queue of examples.
-    return _generate_feats_and_label_batch(filename_queue, batch_size)
+    return _generate_feats_and_label_batch(data_config,
+                                           filename_queue,
+                                           batch_size)
