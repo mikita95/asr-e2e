@@ -1,5 +1,4 @@
 import os
-os.path.abspath('...')
 import re
 
 import tensorflow as tf
@@ -23,7 +22,7 @@ class Writer(object):
         self.labels_handler = labels_handler
 
         if features_selector is None:
-            self.features_selector = fsb.get_feature_selector(self.features_selector['features_selector'])
+            self.features_selector = fsb.get_feature_selector(self.features_settings['features_selector'])
         if labels_handler is None:
             self.labels_handler = lh.get_labels_handler(alphabet_file=self.labels_settings['alphabet_config'],
                                                         handler_name=self.labels_settings['labels_handler'])
@@ -155,6 +154,8 @@ if __name__ == '__main__':
                         type=str)
 
     ARGS, unparsed = parser.parse_known_args()
+
+    tf.logging.set_verbosity(tf.logging.INFO)
 
     writer = Writer(config_file=ARGS.writer_config)
     writer.write(data_dir=ARGS.data_dir,

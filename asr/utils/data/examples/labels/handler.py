@@ -1,17 +1,9 @@
 from abc import ABC, abstractmethod
 from enum import Enum
-from asr.utils.data.examples.labels.indexer import IndexerLabelsHandler
 
 
 class Handler(Enum):
     INDEXER = 'indexer'
-
-
-def get_labels_handler(alphabet_file, handler_name='indexer'):
-    if handler_name == Handler.INDEXER:
-        return IndexerLabelsHandler(alphabet_file=alphabet_file)
-    else:
-        raise TypeError('No such labels handler.')
 
 
 class LabelsHandler(ABC):
@@ -43,3 +35,32 @@ class LabelsHandler(ABC):
     @abstractmethod
     def decode(self, sequence):
         pass
+
+
+class IndexerLabelsHandler(LabelsHandler):
+
+    def _convert_label_to_ctc_format(self, label_text):
+        import numpy as np
+
+        def _normalize_label_text(text):
+            return text.lower().replace('.', '').replace('?', '').replace(',', ''). \
+                replace("'", '').replace('!', '').replace('-', '')
+
+        original = _normalize_label_text(label_text)
+
+        label = np.asarray([int(self.alphabet[c]) for c in original if c in self.alphabet])
+        return label
+
+    def encode(self, label):
+        return self._convert_label_to_ctc_format(label)
+
+    def decode(self, sequence):
+        inv_alphabet = {v: k for k, v in self.alphabet.items()}
+        return ''.join([inv_alphabet[str(c)] for c in sequence])
+
+
+def get_labels_handler(alphabet_file, handler_name='indexer'):
+    if handler_name == Handler.INDEXER.value:
+        return IndexerLabelsHandler(alphabet_file=alphabet_file)
+    else:
+        raise TypeError('No such labels handler.')
