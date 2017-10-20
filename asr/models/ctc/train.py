@@ -64,21 +64,6 @@ def set_learning_rate():
     return learning_rate, global_step
 
 
-def fetch_data(mode=Mode.TRAIN):
-    import asr.models.ctc.input
-    """ Fetch features, labels and sequence_lengths from a common queue."""
-    if mode == Mode.TRAIN:
-        tfrecord_path = FLAGS['train_record_path']
-    else:
-        tfrecord_path = FLAGS['val_record_path']
-
-    feats, labels, seq_lens = asr.models.ctc.input.inputs(tfrecords_path=tfrecord_path,
-                                                          batch_size=int(FLAGS['batch_size']),
-                                                          shuffle=bool(FLAGS['shuffle']))
-
-    return feats, labels, seq_lens
-
-
 def run_train_loop(sess, operations, saver):
     import numpy as np
     import os
@@ -88,6 +73,7 @@ def run_train_loop(sess, operations, saver):
     # Evaluate the ops for max_steps
     for step in range(int(FLAGS['max_steps'])):
         start_time = time.time()
+        sess.run(operations.iterator.initializer, feed_dict={operations.filenames: [FLAGS['train_record_path']]})
 
         train_loss_value, _, train_ler_value = \
             sess.run([operations.train_loss_op, operations.train_op, operations.train_ler_op])
@@ -115,7 +101,7 @@ def run_train_loop(sess, operations, saver):
                        global_step=step)
 
         if step % int(FLAGS['val_period']) == 0 or (step + 1) == int(FLAGS['max_steps']):
-            val_loss_value, _, val_ler_value = sess.run(
+            val_loss_value, val_ler_value = sess.run(
                 [operations.val_loss_op, operations.val_ler_op])
 
             format_str = ('%s: Validation: step %d, '
@@ -163,46 +149,21 @@ def train():
     weights.
     """
     import asr.models.params.optimizers as opt
+    import asr.models.ctc.input
     Operations = namedtuple('Operations', ['train_op', 'train_loss_op', 'train_ler_op', 'train_summary_op',
-                                           'val_loss_op', 'val_ler_op'])
+                                           'iterator', 'filenames'])
 
     with tf.Graph().as_default(), tf.device('/cpu'):
         # Learning rate set up
         learning_rate, global_step = set_learning_rate()
 
-        # Create an optimizer that performs gradient descent.
-        optimizer = opt.get(FLAGS['optimizer'])(learning_rate)
+        """ Fetch features, labels and sequence_lengths from a common queue."""
+        filenames, iterator = asr.models.ctc.input.inputs(batch_size=int(FLAGS['batch_size']),
+                                                          num_epochs=int(FLAGS['max_steps']),
+                                                          shuffle=bool(FLAGS['shuffle']))
 
-        # Get operations for TRAIN
-        train_data = fetch_data(mode=Mode.TRAIN)
-        [train_feats, train_labels, train_seq_lens] = train_data
+        smth = iterator.get_next()
 
-        train_loss_op, train_ler_op = get_loss(feats=train_feats,
-                                               labels=train_labels,
-                                               seq_lens=train_seq_lens,
-                                               mode=Mode.TRAIN)
-
-        train_op = optimizer.minimize(train_loss_op, global_step=global_step)
-
-        # Get operations for VALIDATION
-        val_data = fetch_data(mode=Mode.VALIDATION)
-        [val_feats, val_labels, val_seq_lens] = val_data
-
-        val_loss_op, val_ler_op = get_loss(feats=val_feats,
-                                           labels=val_labels,
-                                           seq_lens=val_seq_lens,
-                                           mode=Mode.VALIDATION)
-
-        # Create summaries for TRAIN
-        summaries = tf.get_collection(tf.GraphKeys.SUMMARIES)
-        train_summary_op = add_summaries(summaries, learning_rate, train_op)
-
-        # Create a saver.
-        saver = tf.train.Saver(tf.all_variables(), max_to_keep=100)
-
-        # Start running operations on the Graph. allow_soft_placement
-        # must be set to True to build towers on GPU, as some of the
-        # ops do not have GPU implementations.
         sess = tf.Session(config=tf.ConfigProto(
             allow_soft_placement=True,
             log_device_placement=bool(FLAGS['log_device_placement'])))
@@ -210,20 +171,36 @@ def train():
         # Initialize vars.
         sess.run(tf.initialize_all_variables())
 
-        # Start the queue runners.
-        tf.train.start_queue_runners(sess)
+        for step in range(int(FLAGS['max_steps'])):
+            sess.run(iterator.initializer, feed_dict={filenames: [FLAGS['train_record_path']]})
+            while True:
+                try:
+                    elem = sess.run(smth)
+                    print(elem)
+                except tf.errors.OutOfRangeError:
+                    print("End of training dataset.")
+                    break
+            sess.run(iterator.initializer, feed_dict={filenames: [FLAGS['val_record_path']]})
+            if step % int(FLAGS['val_period']) == 0 or (step + 1) == int(FLAGS['max_steps']):
+                while True:
+                    try:
+                        elem = sess.run(smth)
+                        print(elem)
+                    except tf.errors.OutOfRangeError:
+                        print("End of training dataset.")
+                        break
 
-        operations = Operations(train_op=train_op,
-                                train_loss_op=train_loss_op,
-                                train_ler_op=train_ler_op,
-                                train_summary_op=train_summary_op,
-                                val_loss_op=val_loss_op,
-                                val_ler_op=val_ler_op)
-
-        # Run training loop
-        run_train_loop(sess=sess,
-                       operations=operations,
-                       saver=saver)
+        # operations = Operations(train_op=train_op,
+        #                         train_loss_op=train_loss_op,
+        #                         train_ler_op=train_ler_op,
+        #                         train_summary_op=train_summary_op,
+        #                         iterator=iterator,
+        #                         filenames=filenames)
+        #
+        # # Run training loop
+        # run_train_loop(sess=sess,
+        #                operations=operations,
+        #                saver=saver)
 
 
 if __name__ == '__main__':
@@ -240,5 +217,7 @@ if __name__ == '__main__':
     config = configparser.ConfigParser()
     config.read(ARGS.train_config, encoding='utf8')
     FLAGS = dict(config.items('CONFIGS'))
+
+    tf.logging.set_verbosity(tf.logging.INFO)
 
     train()
