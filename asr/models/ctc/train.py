@@ -150,8 +150,7 @@ def train():
     """
     import asr.models.params.optimizers as opt
     import asr.models.ctc.input
-    Operations = namedtuple('Operations', ['train_op', 'train_loss_op', 'train_ler_op', 'train_summary_op',
-                                           'iterator', 'filenames'])
+    import numpy as np
 
     with tf.Graph().as_default(), tf.device('/cpu'):
         # Learning rate set up
@@ -164,6 +163,26 @@ def train():
 
         features, labels = iterator.get_next()
 
+        # Learning rate set up
+        learning_rate, global_step = set_learning_rate()
+
+        # Create an optimizer that performs gradient descent.
+        optimizer = opt.get(FLAGS['optimizer'])(learning_rate)
+
+        train_loss_op, train_ler_op = get_loss(feats=features[0],
+                                               labels=labels,
+                                               seq_lens=features[1],
+                                               mode=Mode.TRAIN)
+
+        train_op = optimizer.minimize(train_loss_op, global_step=global_step)
+
+        # Create summaries for TRAIN
+        summaries = tf.get_collection(tf.GraphKeys.SUMMARIES)
+        train_summary_op = add_summaries(summaries, learning_rate, train_op)
+
+        # Create a saver.
+        saver = tf.train.Saver(tf.all_variables(), max_to_keep=100)
+
         sess = tf.Session(config=tf.ConfigProto(
             allow_soft_placement=True,
             log_device_placement=bool(FLAGS['log_device_placement'])))
@@ -171,22 +190,51 @@ def train():
         # Initialize vars.
         sess.run(tf.initialize_all_variables())
 
+        summary_writer = tf.summary.FileWriter(FLAGS['train_dir'], sess.graph)
+
         for step in range(int(FLAGS['max_steps'])):
             sess.run(iterator.initializer, feed_dict={filenames: [FLAGS['train_record_path']]})
+
             while True:
                 try:
-                    feats, label = sess.run([features, labels])
+                    start_time = time.time()
+
+                    sess.run([features, labels])
+                    train_loss_value, _, train_ler_value = sess.run([train_loss_op, train_op, train_ler_op])
+
+                    assert not np.isnan(train_loss_value), 'Model diverged with loss = NaN'
+                    duration = time.time() - start_time
+
+                    examples_per_sec = int(FLAGS['batch_size']) / duration
+                    format_str = ('%s: Training: step %d, '
+                                  'ler = %.2f, '
+                                  'loss = %.2f (%.1f examples/sec; %.3f '
+                                  'sec/batch)')
+                    tf.logging.info(
+                        format_str % (datetime.now(), step, train_ler_value, train_loss_value, examples_per_sec,
+                                      duration))
+
                 except tf.errors.OutOfRangeError:
-                    print("End of training dataset.")
+                    print("End of training epoch " + str(step))
                     break
+
             sess.run(iterator.initializer, feed_dict={filenames: [FLAGS['val_record_path']]})
-            if step % int(FLAGS['val_period']) == 0 or (step + 1) == int(FLAGS['max_steps']):
-                while True:
-                    try:
-                        feats, label = sess.run([features, labels])
-                    except tf.errors.OutOfRangeError:
-                        print("End of training dataset.")
-                        break
+            while True:
+                try:
+                    sess.run([features, labels])
+                    train_loss_value, train_ler_value = sess.run([train_loss_op, train_ler_op])
+
+                    assert not np.isnan(train_loss_value), 'Model diverged with loss = NaN'
+
+                    format_str = ('Validation: step %d, '
+                                  'ler = %.2f, '
+                                  'loss = %.2f')
+                    tf.logging.info(
+                        format_str % (step, train_ler_value, train_loss_value))
+
+                except tf.errors.OutOfRangeError:
+                    print("End of validation.")
+                    break
 
         # operations = Operations(train_op=train_op,
         #                         train_loss_op=train_loss_op,

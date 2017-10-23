@@ -73,22 +73,16 @@ def parser(record):
 
 
 def inputs(batch_size, num_epochs, shuffle=False):
-    """Construct input for fordspeech evaluation using the Reader ops.
-    Args:
-      eval_data: bool, indicating if one should use the train or eval data set.
-      data_dir: Path to the fordspeech data directory.
-      batch_size: Number of images per batch.
-    Returns:
-      images: Images. 4D tensor of
-              [batch_size, IMAGE_SIZE, IMAGE_SIZE, 3] size.
-      labels: Labels. 1D tensor of [batch_size] size.
-    """
-
     filenames = tf.placeholder(tf.string, shape=[None])
-    dataset = tf.contrib.data.TFRecordDataset(filenames)
-    dataset = dataset.map(parser)
-    dataset = dataset.repeat(num_epochs)
+    dataset = tf.contrib.data.TFRecordDataset(filenames).map(parser).repeat(num_epochs)
+
+    if shuffle:
+        dataset = dataset.shuffle(batch_size)
+
     labels_dataset = dataset.map(lambda f, l, s: l)
-    padded_dataset = dataset.map(lambda f, l, s: (f, s)).padded_batch(batch_size=batch_size, padded_shapes=([-1, 18], []))
+    padded_dataset = dataset.map(lambda f, l, s: (f, s)).padded_batch(batch_size=batch_size,
+                                                                      padded_shapes=([-1, 18], []))
+
     dataset = tf.contrib.data.Dataset.zip((padded_dataset, labels_dataset))
+
     return filenames, dataset.make_initializable_iterator()
