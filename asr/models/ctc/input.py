@@ -63,9 +63,13 @@ def parser(record):
         context_features=context_features,
         sequence_features=sequence_features
     )
+    label = context_parsed['label']
+    label = tf.sparse_to_dense(sparse_indices=label.indices,
+                               sparse_values=label.values,
+                               output_shape=label.dense_shape)
 
-    return {'features': sequence_parsed['features'], 'seq_len': tf.cast(context_parsed['seq_length'], tf.int32)}, \
-           context_parsed['label']
+    return sequence_parsed['features'], tf.identity(label, name="label"), context_parsed['seq_length']
+
 
 
 def inputs(batch_size, num_epochs, shuffle=False):
@@ -84,5 +88,7 @@ def inputs(batch_size, num_epochs, shuffle=False):
     dataset = tf.contrib.data.TFRecordDataset(filenames)
     dataset = dataset.map(parser)
     dataset = dataset.repeat(num_epochs)
-    dataset = dataset.padded_batch(batch_size=batch_size, padded_shapes=[-1])
+    labels_dataset = dataset.map(lambda f, l, s: l)
+    padded_dataset = dataset.map(lambda f, l, s: (f, s)).padded_batch(batch_size=batch_size, padded_shapes=([-1, 18], []))
+    dataset = tf.contrib.data.Dataset.zip((padded_dataset, labels_dataset))
     return filenames, dataset.make_initializable_iterator()

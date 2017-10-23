@@ -162,7 +162,7 @@ def train():
                                                           num_epochs=int(FLAGS['max_steps']),
                                                           shuffle=bool(FLAGS['shuffle']))
 
-        smth = iterator.get_next()
+        features, labels = iterator.get_next()
 
         sess = tf.Session(config=tf.ConfigProto(
             allow_soft_placement=True,
@@ -175,8 +175,7 @@ def train():
             sess.run(iterator.initializer, feed_dict={filenames: [FLAGS['train_record_path']]})
             while True:
                 try:
-                    elem = sess.run(smth)
-                    print(elem)
+                    feats, label = sess.run([features, labels])
                 except tf.errors.OutOfRangeError:
                     print("End of training dataset.")
                     break
@@ -184,8 +183,7 @@ def train():
             if step % int(FLAGS['val_period']) == 0 or (step + 1) == int(FLAGS['max_steps']):
                 while True:
                     try:
-                        elem = sess.run(smth)
-                        print(elem)
+                        feats, label = sess.run([features, labels])
                     except tf.errors.OutOfRangeError:
                         print("End of training dataset.")
                         break
