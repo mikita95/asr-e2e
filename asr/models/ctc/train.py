@@ -7,8 +7,7 @@ import tensorflow as tf
 
 import asr.nn.model as mb
 from asr.models.params.modes import Mode
-
-from collections import namedtuple
+import os
 
 FLAGS = None
 
@@ -26,14 +25,14 @@ def get_loss(feats, labels, seq_lens, mode=Mode.TRAIN):
                              config_file=FLAGS['model_config_file'])
 
     ctc_loss = tf.nn.ctc_loss(inputs=logits,
-                              labels=labels,
+                              labels=tf.deserialize_many_sparse(labels, dtype=tf.int32),
                               sequence_length=seq_lens)
 
     ctc_loss_mean = tf.reduce_mean(ctc_loss)
 
     decoded, log_probabilities = tf.nn.ctc_beam_search_decoder(inputs=logits,
                                                                sequence_length=seq_lens)
-    ler = tf.reduce_mean(tf.edit_distance(tf.cast(decoded[0], tf.int32), labels))
+    ler = tf.reduce_mean(tf.edit_distance(tf.cast(decoded[0], tf.int32), tf.deserialize_many_sparse(labels, dtype=tf.int32)))
 
     tf.summary.scalar('ctc_loss_mean', ctc_loss_mean)
     tf.summary.scalar('ler', ler)
@@ -158,13 +157,10 @@ def train():
 
         """ Fetch features, labels and sequence_lengths from a common queue."""
         filenames, iterator = asr.models.ctc.input.inputs(batch_size=int(FLAGS['batch_size']),
-                                                          num_epochs=int(FLAGS['max_steps']),
+                                                          num_epochs=int(FLAGS['num_batches_per_epoch']),
                                                           shuffle=bool(FLAGS['shuffle']))
 
         features, labels = iterator.get_next()
-
-        # Learning rate set up
-        learning_rate, global_step = set_learning_rate()
 
         # Create an optimizer that performs gradient descent.
         optimizer = opt.get(FLAGS['optimizer'])(learning_rate)
@@ -191,10 +187,10 @@ def train():
         sess.run(tf.initialize_all_variables())
 
         summary_writer = tf.summary.FileWriter(FLAGS['train_dir'], sess.graph)
-
+        all_step = 0
         for step in range(int(FLAGS['max_steps'])):
             sess.run(iterator.initializer, feed_dict={filenames: [FLAGS['train_record_path']]})
-
+            batch_num = 0
             while True:
                 try:
                     start_time = time.time()
@@ -206,13 +202,25 @@ def train():
                     duration = time.time() - start_time
 
                     examples_per_sec = int(FLAGS['batch_size']) / duration
-                    format_str = ('%s: Training: step %d, '
+                    format_str = ('%s: Training: step %d, batch %d'
                                   'ler = %.2f, '
                                   'loss = %.2f (%.1f examples/sec; %.3f '
                                   'sec/batch)')
                     tf.logging.info(
-                        format_str % (datetime.now(), step, train_ler_value, train_loss_value, examples_per_sec,
+                        format_str % (datetime.now(), step, batch_num, train_ler_value, train_loss_value, examples_per_sec,
                                       duration))
+
+                    if all_step % int(FLAGS['summaries_interval']) == 0:
+                        summary_writer.add_summary(sess.run(train_summary_op), all_step)
+
+                    # Save the model checkpoint periodically.
+                    if all_step % int(FLAGS['model_save_period']) == 0:
+                        checkpoint_path = os.path.join(FLAGS['train_dir'], 'model.ckpt')
+                        saver.save(sess=sess,
+                                   save_path=checkpoint_path,
+                                   global_step=all_step)
+                    batch_num += 1
+                    all_step += 1
 
                 except tf.errors.OutOfRangeError:
                     print("End of training epoch " + str(step))
@@ -235,6 +243,11 @@ def train():
                 except tf.errors.OutOfRangeError:
                     print("End of validation.")
                     break
+        if all_step % int(FLAGS['model_save_period']) == 0:
+            checkpoint_path = os.path.join(FLAGS['train_dir'], 'model.ckpt')
+            saver.save(sess=sess,
+                       save_path=checkpoint_path,
+                       global_step=all_step)
 
         # operations = Operations(train_op=train_op,
         #                         train_loss_op=train_loss_op,

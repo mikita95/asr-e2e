@@ -64,25 +64,23 @@ def parser(record):
         sequence_features=sequence_features
     )
     label = context_parsed['label']
-    label = tf.sparse_to_dense(sparse_indices=label.indices,
-                               sparse_values=label.values,
-                               output_shape=label.dense_shape)
+    #label = tf.sparse_to_dense(sparse_indices=label.indices,
+    #                           sparse_values=label.values,
+    #                           output_shape=label.dense_shape)
 
-    return sequence_parsed['features'], tf.identity(label, name="label"), context_parsed['seq_length']
-
+    return sequence_parsed['features'], tf.serialize_sparse(tf.cast(label, tf.int32)), tf.cast(context_parsed['seq_length'], tf.int32)
 
 
 def inputs(batch_size, num_epochs, shuffle=False):
     filenames = tf.placeholder(tf.string, shape=[None])
     dataset = tf.contrib.data.TFRecordDataset(filenames).map(parser).repeat(num_epochs)
 
-    if shuffle:
-        dataset = dataset.shuffle(batch_size)
-
-    labels_dataset = dataset.map(lambda f, l, s: l)
+    labels_dataset = dataset.map(lambda f, l, s: l).batch(batch_size=batch_size)
     padded_dataset = dataset.map(lambda f, l, s: (f, s)).padded_batch(batch_size=batch_size,
                                                                       padded_shapes=([-1, 18], []))
 
     dataset = tf.contrib.data.Dataset.zip((padded_dataset, labels_dataset))
+
+    dataset = dataset.shuffle(buffer_size=10000)
 
     return filenames, dataset.make_initializable_iterator()
