@@ -249,18 +249,6 @@ def train():
                        save_path=checkpoint_path,
                        global_step=all_step)
 
-        # operations = Operations(train_op=train_op,
-        #                         train_loss_op=train_loss_op,
-        #                         train_ler_op=train_ler_op,
-        #                         train_summary_op=train_summary_op,
-        #                         iterator=iterator,
-        #                         filenames=filenames)
-        #
-        # # Run training loop
-        # run_train_loop(sess=sess,
-        #                operations=operations,
-        #                saver=saver)
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='trainer',
