@@ -2,7 +2,7 @@
 import tensorflow as tf
 
 
-def _generate_feats_and_label_batch(data_config, filename_queue, batch_size):
+def _generate_feats_and_label_batch(filename_queue, batch_size):
     """Construct a queued batch of spectral features and transcriptions.
     Args:
       filename_queue: queue of filenames to read data from.
@@ -14,12 +14,7 @@ def _generate_feats_and_label_batch(data_config, filename_queue, batch_size):
     """
 
     # Define how to parse the example
-    import configparser
-    config = configparser.ConfigParser()
-    config.read(data_config, encoding='utf8')
 
-    features_settings = dict(config.items('FEATURES'))
-    labels_settings = dict(config.items('LABELS'))
 
     reader = tf.TFRecordReader()
     _, serialized_example = reader.read(filename_queue)
@@ -30,7 +25,7 @@ def _generate_feats_and_label_batch(data_config, filename_queue, batch_size):
     }
 
     sequence_features = {
-        "features": tf.FixedLenSequenceFeature([13, ], dtype=tf.float32)
+        "features": tf.FixedLenSequenceFeature([18, ], dtype=tf.float32)
     }
 
     # Parse the example (returns a dictionary of tensors)
@@ -53,22 +48,39 @@ def _generate_feats_and_label_batch(data_config, filename_queue, batch_size):
     return feats, tf.cast(labels, tf.int32), seq_len
 
 
-def inputs(data_config, tfrecords_path, batch_size, shuffle=False):
-    """Construct input for fordspeech evaluation using the Reader ops.
-    Args:
-      eval_data: bool, indicating if one should use the train or eval data set.
-      data_dir: Path to the fordspeech data directory.
-      batch_size: Number of images per batch.
-    Returns:
-      images: Images. 4D tensor of
-              [batch_size, IMAGE_SIZE, IMAGE_SIZE, 3] size.
-      labels: Labels. 1D tensor of [batch_size] size.
-    """
+def parser(record):
+    context_features = {
+        "seq_length": tf.FixedLenFeature([], dtype=tf.int64),
+        "label": tf.VarLenFeature(dtype=tf.int64)
+    }
 
-    # Create a queue that produces the filenames to read.
-    filename_queue = tf.train.string_input_producer([tfrecords_path], shuffle=shuffle)
+    sequence_features = {
+        "features": tf.FixedLenSequenceFeature([18, ], dtype=tf.float32)
+    }
 
-    # Generate a batch of images and labels by building up a queue of examples.
-    return _generate_feats_and_label_batch(data_config,
-                                           filename_queue,
-                                           batch_size)
+    context_parsed, sequence_parsed = tf.parse_single_sequence_example(
+        record,
+        context_features=context_features,
+        sequence_features=sequence_features
+    )
+    label = context_parsed['label']
+    #label = tf.sparse_to_dense(sparse_indices=label.indices,
+    #                           sparse_values=label.values,
+    #                           output_shape=label.dense_shape)
+
+    return sequence_parsed['features'], tf.serialize_sparse(tf.cast(label, tf.int32)), tf.cast(context_parsed['seq_length'], tf.int32)
+
+
+def inputs(batch_size, num_epochs, shuffle=False):
+    filenames = tf.placeholder(tf.string, shape=[None])
+    dataset = tf.contrib.data.TFRecordDataset(filenames).map(parser).repeat(num_epochs)
+
+    labels_dataset = dataset.map(lambda f, l, s: l).batch(batch_size=batch_size)
+    padded_dataset = dataset.map(lambda f, l, s: (f, s)).padded_batch(batch_size=batch_size,
+                                                                      padded_shapes=([-1, 18], []))
+
+    dataset = tf.contrib.data.Dataset.zip((padded_dataset, labels_dataset))
+
+    dataset = dataset.shuffle(buffer_size=10000)
+
+    return filenames, dataset.make_initializable_iterator()

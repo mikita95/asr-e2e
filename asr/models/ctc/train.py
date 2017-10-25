@@ -7,8 +7,7 @@ import tensorflow as tf
 
 import asr.nn.model as mb
 from asr.models.params.modes import Mode
-
-from collections import namedtuple
+import os
 
 FLAGS = None
 
@@ -26,14 +25,14 @@ def get_loss(feats, labels, seq_lens, mode=Mode.TRAIN):
                              config_file=FLAGS['model_config_file'])
 
     ctc_loss = tf.nn.ctc_loss(inputs=logits,
-                              labels=labels,
+                              labels=tf.deserialize_many_sparse(labels, dtype=tf.int32),
                               sequence_length=seq_lens)
 
     ctc_loss_mean = tf.reduce_mean(ctc_loss)
 
     decoded, log_probabilities = tf.nn.ctc_beam_search_decoder(inputs=logits,
                                                                sequence_length=seq_lens)
-    ler = tf.reduce_mean(tf.edit_distance(tf.cast(decoded[0], tf.int32), labels))
+    ler = tf.reduce_mean(tf.edit_distance(tf.cast(decoded[0], tf.int32), tf.deserialize_many_sparse(labels, dtype=tf.int32)))
 
     tf.summary.scalar('ctc_loss_mean', ctc_loss_mean)
     tf.summary.scalar('ler', ler)
@@ -64,21 +63,6 @@ def set_learning_rate():
     return learning_rate, global_step
 
 
-def fetch_data(mode=Mode.TRAIN):
-    import asr.models.ctc.input
-    """ Fetch features, labels and sequence_lengths from a common queue."""
-    if mode == Mode.TRAIN:
-        tfrecord_path = FLAGS['train_record_path']
-    else:
-        tfrecord_path = FLAGS['val_record_path']
-
-    feats, labels, seq_lens = asr.models.ctc.input.inputs(tfrecords_path=tfrecord_path,
-                                                          batch_size=int(FLAGS['batch_size']),
-                                                          shuffle=bool(FLAGS['shuffle']))
-
-    return feats, labels, seq_lens
-
-
 def run_train_loop(sess, operations, saver):
     import numpy as np
     import os
@@ -88,6 +72,7 @@ def run_train_loop(sess, operations, saver):
     # Evaluate the ops for max_steps
     for step in range(int(FLAGS['max_steps'])):
         start_time = time.time()
+        sess.run(operations.iterator.initializer, feed_dict={operations.filenames: [FLAGS['train_record_path']]})
 
         train_loss_value, _, train_ler_value = \
             sess.run([operations.train_loss_op, operations.train_op, operations.train_ler_op])
@@ -115,7 +100,7 @@ def run_train_loop(sess, operations, saver):
                        global_step=step)
 
         if step % int(FLAGS['val_period']) == 0 or (step + 1) == int(FLAGS['max_steps']):
-            val_loss_value, _, val_ler_value = sess.run(
+            val_loss_value, val_ler_value = sess.run(
                 [operations.val_loss_op, operations.val_ler_op])
 
             format_str = ('%s: Validation: step %d, '
@@ -163,35 +148,29 @@ def train():
     weights.
     """
     import asr.models.params.optimizers as opt
-    Operations = namedtuple('Operations', ['train_op', 'train_loss_op', 'train_ler_op', 'train_summary_op',
-                                           'val_loss_op', 'val_ler_op'])
+    import asr.models.ctc.input
+    import numpy as np
 
     with tf.Graph().as_default(), tf.device('/cpu'):
         # Learning rate set up
         learning_rate, global_step = set_learning_rate()
 
+        """ Fetch features, labels and sequence_lengths from a common queue."""
+        filenames, iterator = asr.models.ctc.input.inputs(batch_size=int(FLAGS['batch_size']),
+                                                          num_epochs=int(FLAGS['num_batches_per_epoch']),
+                                                          shuffle=bool(FLAGS['shuffle']))
+
+        features, labels = iterator.get_next()
+
         # Create an optimizer that performs gradient descent.
         optimizer = opt.get(FLAGS['optimizer'])(learning_rate)
 
-        # Get operations for TRAIN
-        train_data = fetch_data(mode=Mode.TRAIN)
-        [train_feats, train_labels, train_seq_lens] = train_data
-
-        train_loss_op, train_ler_op = get_loss(feats=train_feats,
-                                               labels=train_labels,
-                                               seq_lens=train_seq_lens,
+        train_loss_op, train_ler_op = get_loss(feats=features[0],
+                                               labels=labels,
+                                               seq_lens=features[1],
                                                mode=Mode.TRAIN)
 
         train_op = optimizer.minimize(train_loss_op, global_step=global_step)
-
-        # Get operations for VALIDATION
-        val_data = fetch_data(mode=Mode.VALIDATION)
-        [val_feats, val_labels, val_seq_lens] = val_data
-
-        val_loss_op, val_ler_op = get_loss(feats=val_feats,
-                                           labels=val_labels,
-                                           seq_lens=val_seq_lens,
-                                           mode=Mode.VALIDATION)
 
         # Create summaries for TRAIN
         summaries = tf.get_collection(tf.GraphKeys.SUMMARIES)
@@ -200,9 +179,6 @@ def train():
         # Create a saver.
         saver = tf.train.Saver(tf.all_variables(), max_to_keep=100)
 
-        # Start running operations on the Graph. allow_soft_placement
-        # must be set to True to build towers on GPU, as some of the
-        # ops do not have GPU implementations.
         sess = tf.Session(config=tf.ConfigProto(
             allow_soft_placement=True,
             log_device_placement=bool(FLAGS['log_device_placement'])))
@@ -210,20 +186,68 @@ def train():
         # Initialize vars.
         sess.run(tf.initialize_all_variables())
 
-        # Start the queue runners.
-        tf.train.start_queue_runners(sess)
+        summary_writer = tf.summary.FileWriter(FLAGS['train_dir'], sess.graph)
+        all_step = 0
+        for step in range(int(FLAGS['max_steps'])):
+            sess.run(iterator.initializer, feed_dict={filenames: [FLAGS['train_record_path']]})
+            batch_num = 0
+            while True:
+                try:
+                    start_time = time.time()
 
-        operations = Operations(train_op=train_op,
-                                train_loss_op=train_loss_op,
-                                train_ler_op=train_ler_op,
-                                train_summary_op=train_summary_op,
-                                val_loss_op=val_loss_op,
-                                val_ler_op=val_ler_op)
+                    sess.run([features, labels])
+                    train_loss_value, _, train_ler_value = sess.run([train_loss_op, train_op, train_ler_op])
 
-        # Run training loop
-        run_train_loop(sess=sess,
-                       operations=operations,
-                       saver=saver)
+                    assert not np.isnan(train_loss_value), 'Model diverged with loss = NaN'
+                    duration = time.time() - start_time
+
+                    examples_per_sec = int(FLAGS['batch_size']) / duration
+                    format_str = ('%s: Training: step %d, batch %d'
+                                  'ler = %.2f, '
+                                  'loss = %.2f (%.1f examples/sec; %.3f '
+                                  'sec/batch)')
+                    tf.logging.info(
+                        format_str % (datetime.now(), step, batch_num, train_ler_value, train_loss_value, examples_per_sec,
+                                      duration))
+
+                    if all_step % int(FLAGS['summaries_interval']) == 0:
+                        summary_writer.add_summary(sess.run(train_summary_op), all_step)
+
+                    # Save the model checkpoint periodically.
+                    if all_step % int(FLAGS['model_save_period']) == 0:
+                        checkpoint_path = os.path.join(FLAGS['train_dir'], 'model.ckpt')
+                        saver.save(sess=sess,
+                                   save_path=checkpoint_path,
+                                   global_step=all_step)
+                    batch_num += 1
+                    all_step += 1
+
+                except tf.errors.OutOfRangeError:
+                    print("End of training epoch " + str(step))
+                    break
+
+            sess.run(iterator.initializer, feed_dict={filenames: [FLAGS['val_record_path']]})
+            while True:
+                try:
+                    sess.run([features, labels])
+                    train_loss_value, train_ler_value = sess.run([train_loss_op, train_ler_op])
+
+                    assert not np.isnan(train_loss_value), 'Model diverged with loss = NaN'
+
+                    format_str = ('Validation: step %d, '
+                                  'ler = %.2f, '
+                                  'loss = %.2f')
+                    tf.logging.info(
+                        format_str % (step, train_ler_value, train_loss_value))
+
+                except tf.errors.OutOfRangeError:
+                    print("End of validation.")
+                    break
+        if all_step % int(FLAGS['model_save_period']) == 0:
+            checkpoint_path = os.path.join(FLAGS['train_dir'], 'model.ckpt')
+            saver.save(sess=sess,
+                       save_path=checkpoint_path,
+                       global_step=all_step)
 
 
 if __name__ == '__main__':
@@ -240,5 +264,7 @@ if __name__ == '__main__':
     config = configparser.ConfigParser()
     config.read(ARGS.train_config, encoding='utf8')
     FLAGS = dict(config.items('CONFIGS'))
+
+    tf.logging.set_verbosity(tf.logging.INFO)
 
     train()
