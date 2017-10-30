@@ -79,8 +79,7 @@ def inputs(batch_size, num_epochs, shuffle=False):
     padded_dataset = dataset.map(lambda f, l, s: (f, s)).padded_batch(batch_size=batch_size,
                                                                       padded_shapes=([-1, 18], []))
 
-    dataset = tf.contrib.data.Dataset.zip((padded_dataset, labels_dataset))
+    dataset = tf.contrib.data.Dataset.zip((padded_dataset, labels_dataset)).shuffle(buffer_size=200)
 
-    dataset = dataset.shuffle(buffer_size=10000)
 
     return filenames, dataset.make_initializable_iterator()

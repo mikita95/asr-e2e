@@ -63,53 +63,6 @@ def set_learning_rate():
     return learning_rate, global_step
 
 
-def run_train_loop(sess, operations, saver):
-    import numpy as np
-    import os
-    """ Train the model for required number of steps."""
-    summary_writer = tf.summary.FileWriter(FLAGS['train_dir'], sess.graph)
-
-    # Evaluate the ops for max_steps
-    for step in range(int(FLAGS['max_steps'])):
-        start_time = time.time()
-        sess.run(operations.iterator.initializer, feed_dict={operations.filenames: [FLAGS['train_record_path']]})
-
-        train_loss_value, _, train_ler_value = \
-            sess.run([operations.train_loss_op, operations.train_op, operations.train_ler_op])
-
-        duration = time.time() - start_time
-        assert not np.isnan(train_loss_value), 'Model diverged with loss = NaN'
-
-        examples_per_sec = int(FLAGS['batch_size']) / duration
-        format_str = ('%s: Training: step %d, '
-                      'ler = %.2f, '
-                      'loss = %.2f (%.1f examples/sec; %.3f '
-                      'sec/batch)')
-        tf.logging.info(format_str % (datetime.now(), step, train_ler_value, train_loss_value, examples_per_sec,
-                                      duration))
-
-        # Run the summary ops periodically.
-        if step % int(FLAGS['summaries_interval']) == 0:
-            summary_writer.add_summary(sess.run(operations.train_summary_op), step)
-
-        # Save the model checkpoint periodically.
-        if step % int(FLAGS['model_save_period']) == 0 or (step + 1) == int(FLAGS['max_steps']):
-            checkpoint_path = os.path.join(FLAGS['train_dir'], 'model.ckpt')
-            saver.save(sess=sess,
-                       save_path=checkpoint_path,
-                       global_step=step)
-
-        if step % int(FLAGS['val_period']) == 0 or (step + 1) == int(FLAGS['max_steps']):
-            val_loss_value, val_ler_value = sess.run(
-                [operations.val_loss_op, operations.val_ler_op])
-
-            format_str = ('%s: Validation: step %d, '
-                          'ler = %.2f, '
-                          'loss = %.2f')
-
-            tf.logging.info(format_str % (datetime.now(), step, val_ler_value, val_loss_value))
-
-
 def initialize_from_checkpoint(sess, saver):
     """ Initialize variables on the graph"""
     # Initialise variables from a checkpoint file, if provided.
@@ -157,7 +110,7 @@ def train():
 
         """ Fetch features, labels and sequence_lengths from a common queue."""
         filenames, iterator = asr.models.ctc.input.inputs(batch_size=int(FLAGS['batch_size']),
-                                                          num_epochs=int(FLAGS['num_batches_per_epoch']),
+                                                          num_epochs=int(FLAGS['max_steps']),
                                                           shuffle=bool(FLAGS['shuffle']))
 
         features, labels = iterator.get_next()
@@ -191,8 +144,9 @@ def train():
         for step in range(int(FLAGS['max_steps'])):
             sess.run(iterator.initializer, feed_dict={filenames: [FLAGS['train_record_path']]})
             batch_num = 0
-            while True:
-                try:
+
+            try:
+                for i in range(0, int(FLAGS['num_batches_per_epoch'])):
                     start_time = time.time()
 
                     sess.run([features, labels])
@@ -202,7 +156,7 @@ def train():
                     duration = time.time() - start_time
 
                     examples_per_sec = int(FLAGS['batch_size']) / duration
-                    format_str = ('%s: Training: step %d, batch %d'
+                    format_str = ('%s: Training: step %d, batch %d, '
                                   'ler = %.2f, '
                                   'loss = %.2f (%.1f examples/sec; %.3f '
                                   'sec/batch)')
@@ -222,27 +176,28 @@ def train():
                     batch_num += 1
                     all_step += 1
 
-                except tf.errors.OutOfRangeError:
-                    print("End of training epoch " + str(step))
-                    break
+            finally:
+                print("End of training epoch " + str(step))
 
             sess.run(iterator.initializer, feed_dict={filenames: [FLAGS['val_record_path']]})
-            while True:
-                try:
+            av_val_ler = 0
+            num_val_batches = 0
+
+            try:
+                for i in range(0, int(FLAGS['num_batches_per_val'])):
                     sess.run([features, labels])
                     train_loss_value, train_ler_value = sess.run([train_loss_op, train_ler_op])
 
                     assert not np.isnan(train_loss_value), 'Model diverged with loss = NaN'
 
-                    format_str = ('Validation: step %d, '
-                                  'ler = %.2f, '
-                                  'loss = %.2f')
-                    tf.logging.info(
-                        format_str % (step, train_ler_value, train_loss_value))
+                    av_val_ler += train_ler_value
+                    num_val_batches += 1
 
-                except tf.errors.OutOfRangeError:
-                    print("End of validation.")
-                    break
+            finally:
+                format_str = ('Validation: step %d, '
+                              'ler = %.2f')
+                tf.logging.info(
+                    format_str % (step, av_val_ler / num_val_batches))
         if all_step % int(FLAGS['model_save_period']) == 0:
             checkpoint_path = os.path.join(FLAGS['train_dir'], 'model.ckpt')
             saver.save(sess=sess,

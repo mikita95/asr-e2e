@@ -9,8 +9,8 @@ FLAGS = None
 
 
 def sparse_to_labels(sparse_matrix):
-    import asr.models.ctc.labels.handler as hn
-    handler = hn.CTCLabelsHandler(
+    import asr.utils.data.examples.labels.handler as hn
+    handler = hn.IndexerLabelsHandler(
         alphabet_file=FLAGS['alphabet_config_file'])
     """ Convert index based transcripts to strings"""
     results = [''] * sparse_matrix.dense_shape[0]
@@ -63,74 +63,45 @@ def inference(predictions_op, true_labels_op, sess, output_file):
     return char_err_rate
 
 
-def eval_once(saver, predictions_op, true_labels_op):
-    """Run Eval once.
-    Args:
-      saver: Saver.
-      summary_writer: Summary writer.
-      predictions_ops: Op to compute predictions.
-      summary_op: Summary op.
-    """
-    with tf.Session() as sess:
-
-        # Initialize weights from checkpoint file.
-        global_step = initialize_from_checkpoint(sess, saver)
-
-        # Start the queue runners.
-        coord = tf.train.Coordinator()
-        try:
-            threads = []
-            for queue_runners in tf.get_collection(tf.GraphKeys.QUEUE_RUNNERS):
-                threads.extend(queue_runners.create_threads(sess, coord=coord,
-                                                            daemon=True,
-                                                            start=True))
-            # Only using a subset of the training data
-
-            inference(predictions_op, true_labels_op, sess, FLAGS['output_file'])
-
-        except Exception as exc:  # pylint: disable=broad-except
-            coord.request_stop(exc)
-
-        # Close threads
-        coord.request_stop()
-        coord.join(threads, stop_grace_period_secs=10)
-
-
 def evaluate():
     """ Evaluate deepSpeech modelfor a number of steps."""
     import asr.models.ctc.input
-    import asr.models.ctc.labels.handler as hn
+    import asr.utils.data.examples.labels.handler as hn
 
     with tf.Graph().as_default() as graph:
         # Get feats and labels for deepSpeech.
         tot_batch_size = int(FLAGS['batch_size'])
 
-        feats, labels, seq_lens = asr.models.ctc.input.inputs(
-            tfrecords_path=FLAGS['test_record_path'],
-            batch_size=tot_batch_size,
-            shuffle=bool(FLAGS['shuffle']))
+        filenames, iterator = asr.models.ctc.input.inputs(batch_size=int(FLAGS['batch_size']),
+                                                          num_epochs=None,
+                                                          shuffle=bool(FLAGS['shuffle']))
+
+        features, labels = iterator.get_next()
 
         # Build ops that computes the logits predictions from the
         # inference model.
 
         logits = mb.create_model(arch_type=FLAGS['model'],
-                                 feature_input=feats,
-                                 seq_lengths=seq_lens,
+                                 feature_input=features[0],
+                                 seq_lengths=features[1],
                                  batch_size=int(FLAGS['batch_size']),
                                  mode=Mode.TRAIN,
-                                 num_classes=hn.CTCLabelsHandler(
+                                 num_classes=hn.IndexerLabelsHandler(
                                      alphabet_file=FLAGS['alphabet_config_file']).get_alphabet_size() + 1,
                                  config_file=FLAGS['model_config_file'])
 
-        # Calculate predictions.
         output_log_prob = tf.nn.log_softmax(logits)
         decoder = tf.nn.ctc_beam_search_decoder
-
-        predictions = decoder(output_log_prob, seq_lens)
+        predictions = decoder(output_log_prob, features[1])
 
         saver = tf.train.Saver()
+        with tf.Session() as sess:
 
-        eval_once(saver, predictions, labels)
+            # Initialize weights from checkpoint file.
+            global_step = initialize_from_checkpoint(sess, saver)
+            sess.run(iterator.initializer, feed_dict={filenames: [FLAGS['test_record_path']]})
+
+            inference(predictions, tf.deserialize_many_sparse(labels, dtype=tf.int32), sess, FLAGS['output_file'])
 
 
 def main():
