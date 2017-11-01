@@ -8,6 +8,7 @@ from asr.models.params.modes import Mode
 def create_model(arch_type, feature_input, seq_lengths, mode, num_classes, batch_size=None, config_file=None):
     from asr.nn.archs.lstm.arch import LSTM
     from asr.nn.archs.mlp.arch import MLP
+    from asr.nn.archs.convlstm.arch import CONVLSTM
     if arch_type == 'lstm':
         return LSTM(feature_input=feature_input,
                     seq_lengths=seq_lengths,
@@ -15,6 +16,13 @@ def create_model(arch_type, feature_input, seq_lengths, mode, num_classes, batch
                     mode=mode,
                     batch_size=batch_size,
                     config_file='configs/lstm.ini' if config_file is None else config_file).build_graph()
+    if arch_type == 'convlstm':
+        return CONVLSTM(feature_input=feature_input,
+                    seq_lengths=seq_lengths,
+                    num_classes=num_classes,
+                    mode=mode,
+                    batch_size=batch_size,
+                    config_file='configs/convlstm.ini' if config_file is None else config_file).build_graph()
     if arch_type == 'mlp':
         return MLP(feature_input=feature_input,
                     seq_lengths=seq_lengths,
